@@ -1,0 +1,359 @@
+syntax = "proto3";
+
+package fsm.proto;
+
+option cc_enable_arenas = true;
+
+// ============================================================================
+// 基础类型定义
+// ============================================================================
+
+message Timestamp {
+    int64 seconds = 1;
+    int32 nanos = 2;
+}
+
+message Vector3 {
+    double x = 1;
+    double y = 2;
+    double z = 3;
+}
+
+message Quaternion {
+    double x = 1;
+    double y = 2;
+    double z = 3;
+    double w = 4;
+}
+
+message GeoPoint {
+    double latitude = 1;
+    double longitude = 2;
+    double altitude = 3;
+}
+
+// ============================================================================
+// 车辆状态消息
+// ============================================================================
+
+enum GearPosition {
+    GEAR_PARK = 0;
+    GEAR_REVERSE = 1;
+    GEAR_NEUTRAL = 2;
+    GEAR_DRIVE = 3;
+    GEAR_LOW = 4;
+}
+
+enum VehicleMode {
+    MODE_MANUAL = 0;
+    MODE_AUTONOMOUS = 1;
+    MODE_REMOTE = 2;
+    MODE_EMERGENCY = 3;
+}
+
+enum TurnSignal {
+    SIGNAL_NONE = 0;
+    SIGNAL_LEFT = 1;
+    SIGNAL_RIGHT = 2;
+    SIGNAL_HAZARD = 3;
+}
+
+message VelocityStatus {
+    Timestamp stamp = 1;
+    float longitudinal_velocity = 2;  // m/s
+    float lateral_velocity = 3;       // m/s
+    float heading_rate = 4;           // rad/s
+}
+
+message SteeringStatus {
+    Timestamp stamp = 1;
+    float steering_tire_angle = 2;    // rad
+    float steering_wheel_angle = 3;   // rad (if available)
+}
+
+message VehicleStatus {
+    Timestamp stamp = 1;
+    string vehicle_id = 2;
+    VelocityStatus velocity = 3;
+    SteeringStatus steering = 4;
+    GearPosition gear = 5;
+    VehicleMode mode = 6;
+    TurnSignal turn_signal = 7;
+    bool hazard_lights = 8;
+    bool headlights = 9;
+    float fuel_level = 10;            // 0.0 - 1.0
+    float battery_level = 11;         // 0.0 - 1.0 (for EV)
+}
+
+// ============================================================================
+// 定位消息
+// ============================================================================
+
+message Pose {
+    Vector3 position = 1;
+    Quaternion orientation = 2;
+}
+
+message Twist {
+    Vector3 linear = 1;
+    Vector3 angular = 2;
+}
+
+message LocalizationState {
+    Timestamp stamp = 1;
+    Pose pose = 2;
+    Twist twist = 3;
+    GeoPoint geo_point = 4;
+    float heading = 5;                // rad
+    repeated double covariance = 6;   // 6x6 covariance matrix
+}
+
+// ============================================================================
+// 系统状态消息
+// ============================================================================
+
+enum DiagnosticLevel {
+    DIAG_OK = 0;
+    DIAG_WARN = 1;
+    DIAG_ERROR = 2;
+    DIAG_STALE = 3;
+}
+
+message DiagnosticStatus {
+    DiagnosticLevel level = 1;
+    string name = 2;
+    string message = 3;
+    string hardware_id = 4;
+}
+
+message SystemStatus {
+    Timestamp stamp = 1;
+    string vehicle_id = 2;
+    float cpu_usage = 3;              // 0.0 - 100.0
+    float memory_usage = 4;           // 0.0 - 100.0
+    float gpu_usage = 5;              // 0.0 - 100.0
+    float disk_usage = 6;             // 0.0 - 100.0
+    float network_tx_bytes = 7;       // bytes/s
+    float network_rx_bytes = 8;       // bytes/s
+    repeated DiagnosticStatus diagnostics = 9;
+}
+
+// ============================================================================
+// 通信状态消息
+// ============================================================================
+
+message LatencyInfo {
+    Timestamp stamp = 1;
+    float rtt_ms = 2;                 // Round-trip time
+    float video_latency_ms = 3;       // Video encode + transmit + decode
+    float control_latency_ms = 4;     // Control command round-trip
+    float jitter_ms = 5;              // Latency variation
+    float packet_loss_rate = 6;       // 0.0 - 1.0
+}
+
+message ConnectionStatus {
+    enum State {
+        DISCONNECTED = 0;
+        CONNECTING = 1;
+        CONNECTED = 2;
+        RECONNECTING = 3;
+        FAILED = 4;
+    }
+
+    Timestamp stamp = 1;
+    string vehicle_id = 2;
+    State state = 3;
+    LatencyInfo latency = 4;
+    string signaling_server = 5;
+    string turn_server = 6;
+    int32 video_streams_active = 7;
+    bool data_channel_open = 8;
+}
+
+// ============================================================================
+// 控制指令消息
+// ============================================================================
+
+message SteeringCommand {
+    Timestamp stamp = 1;
+    float steering_tire_angle = 2;    // rad, target angle
+    float steering_tire_rotation_rate = 3;  // rad/s
+}
+
+message LongitudinalCommand {
+    Timestamp stamp = 1;
+    float speed = 2;                  // m/s, target speed
+    float acceleration = 3;           // m/s², target acceleration
+    float jerk = 4;                   // m/s³
+}
+
+message GearCommand {
+    Timestamp stamp = 1;
+    GearPosition gear = 2;
+}
+
+message TurnSignalCommand {
+    Timestamp stamp = 1;
+    TurnSignal signal = 2;
+}
+
+message EmergencyCommand {
+    Timestamp stamp = 1;
+    bool emergency = 2;
+    string reason = 3;
+}
+
+message ControlCommand {
+    Timestamp stamp = 1;
+    string vehicle_id = 2;
+    string operator_id = 3;
+    SteeringCommand steering = 4;
+    LongitudinalCommand longitudinal = 5;
+    GearCommand gear = 6;
+    TurnSignalCommand turn_signal = 7;
+    EmergencyCommand emergency = 8;
+    uint64 sequence_number = 9;       // For command tracking
+}
+
+// ============================================================================
+// 遥测数据聚合消息
+// ============================================================================
+
+message TelemetryData {
+    Timestamp stamp = 1;
+    string vehicle_id = 2;
+    VehicleStatus vehicle_status = 3;
+    LocalizationState localization = 4;
+    SystemStatus system_status = 5;
+    ConnectionStatus connection = 6;
+    uint64 sequence_number = 7;
+}
+
+// ============================================================================
+// 调度相关消息
+// ============================================================================
+
+enum VehicleTaskStatus {
+    TASK_IDLE = 0;
+    TASK_ACTIVE = 1;
+    TASK_PAUSED = 2;
+    TASK_COMPLETED = 3;
+    TASK_FAILED = 4;
+}
+
+enum EmergencyLevel {
+    EMERGENCY_NONE = 0;
+    EMERGENCY_LOW = 1;
+    EMERGENCY_MEDIUM = 2;
+    EMERGENCY_HIGH = 3;
+    EMERGENCY_CRITICAL = 4;
+}
+
+message VehicleSchedulingInfo {
+    string vehicle_id = 1;
+    VehicleTaskStatus task_status = 2;
+    EmergencyLevel emergency_level = 3;
+    float priority_score = 4;         // Computed priority
+    GeoPoint location = 5;
+    float latency_ms = 6;
+    float battery_level = 7;
+    string current_task = 8;
+    Timestamp last_update = 9;
+}
+
+message SchedulingQueue {
+    Timestamp stamp = 1;
+    repeated VehicleSchedulingInfo vehicles = 2;
+    string algorithm = 3;
+    bool scheduling_enabled = 4;
+}
+
+// ============================================================================
+// 告警消息
+// ============================================================================
+
+enum AlertSeverity {
+    ALERT_INFO = 0;
+    ALERT_WARNING = 1;
+    ALERT_ERROR = 2;
+    ALERT_CRITICAL = 3;
+}
+
+enum AlertType {
+    ALERT_LATENCY = 0;
+    ALERT_CONNECTION = 1;
+    ALERT_VEHICLE = 2;
+    ALERT_SYSTEM = 3;
+    ALERT_SAFETY = 4;
+}
+
+message Alert {
+    Timestamp stamp = 1;
+    string id = 2;
+    string vehicle_id = 3;
+    AlertType type = 4;
+    AlertSeverity severity = 5;
+    string title = 6;
+    string message = 7;
+    bool acknowledged = 8;
+    Timestamp ack_time = 9;
+    string ack_by = 10;
+}
+
+// ============================================================================
+// 预测模型相关
+// ============================================================================
+
+message PredictedTrajectoryPoint {
+    Pose pose = 1;
+    float velocity = 2;
+    float acceleration = 3;
+    float time_from_start = 4;        // seconds
+}
+
+message PredictedTrajectory {
+    Timestamp stamp = 1;
+    string vehicle_id = 2;
+    repeated PredictedTrajectoryPoint points = 3;
+    float confidence = 4;             // 0.0 - 1.0
+}
+
+message LatencyCompensation {
+    Timestamp stamp = 1;
+    float compensation_time = 2;      // seconds to compensate
+    PredictedTrajectory predicted = 3;
+    bool enabled = 4;
+}
+
+// ============================================================================
+// 视频帧元数据
+// ============================================================================
+
+message VideoFrameMetadata {
+    Timestamp stamp = 1;
+    string camera_id = 2;
+    uint32 width = 3;
+    uint32 height = 4;
+    string encoding = 5;              // h264, vp8, etc.
+    uint64 frame_number = 6;
+    float fps = 7;
+    uint32 bitrate = 8;
+}
+
+// ============================================================================
+// 心跳消息
+// ============================================================================
+
+message Heartbeat {
+    Timestamp stamp = 1;
+    string sender_id = 2;
+    uint64 sequence = 3;
+    bool request_ack = 4;
+}
+
+message HeartbeatAck {
+    Timestamp stamp = 1;
+    string sender_id = 2;
+    uint64 sequence = 3;
+    Timestamp original_stamp = 4;
+}

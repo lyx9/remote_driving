@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/fsm_operator_client.dir/src/main.cpp.o -o fsm_operator_client  -Wl,-rpath,/home/lyx/fsm/cpp/build: libfsm_operator_lib.a ../libfsm_common.so /usr/lib/x86_64-linux-gnu/libyaml-cpp.so.0.7.0 /usr/lib/x86_64-linux-gnu/libspdlog.so.1.9.2 /usr/lib/x86_64-linux-gnu/libfmt.so.8.1.1 -Wl,--as-needed /usr/lib/x86_64-linux-gnu/libprotobuf.so 

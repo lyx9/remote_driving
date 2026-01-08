@@ -1,0 +1,2 @@
+/usr/bin/ar qc libfsm_cloud_lib.a CMakeFiles/fsm_cloud_lib.dir/src/scheduling_service.cpp.o CMakeFiles/fsm_cloud_lib.dir/src/signaling_server.cpp.o CMakeFiles/fsm_cloud_lib.dir/src/alert_analyzer.cpp.o CMakeFiles/fsm_cloud_lib.dir/src/prediction_interface.cpp.o
+/usr/bin/ranlib libfsm_cloud_lib.a

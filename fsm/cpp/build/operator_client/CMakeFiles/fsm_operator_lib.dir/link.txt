@@ -1,0 +1,2 @@
+/usr/bin/ar qc libfsm_operator_lib.a CMakeFiles/fsm_operator_lib.dir/src/wheel_controller.cpp.o CMakeFiles/fsm_operator_lib.dir/src/operator_client.cpp.o
+/usr/bin/ranlib libfsm_operator_lib.a

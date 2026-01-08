@@ -1,0 +1,130 @@
+# FSM-Pilot 云端配置文件
+# 版本: 1.1
+
+server:
+  signaling_port: 8080
+  api_port: 8081
+  websocket_port: 8082
+
+  # TLS配置 (生产环境必须启用)
+  tls:
+    enabled: false
+    cert_file: "/etc/ssl/certs/server.crt"
+    key_file: "/etc/ssl/private/server.key"
+
+# 调度算法配置
+scheduling:
+  enabled: true
+  algorithm: "weighted_priority"  # weighted_priority, emergency_first, latency_based
+
+  # 算法权重
+  weights:
+    emergency: 0.35       # 紧急程度权重
+    latency: 0.25         # 延迟权重
+    distance: 0.20        # 距离权重
+    battery: 0.10         # 电量权重
+    task_priority: 0.10   # 任务优先级权重
+
+  # 阈值配置
+  thresholds:
+    max_latency_ms: 200         # 最大允许延迟 (警告阈值)
+    critical_latency_ms: 500    # 临界延迟 (紧急阈值)
+    min_battery_percent: 20     # 最低电量百分比
+
+  # 调度参数
+  parameters:
+    update_interval_ms: 100     # 调度更新间隔
+    vehicle_timeout_ms: 10000   # 车辆超时时间
+
+# 告警配置
+alerts:
+  enabled: true
+
+  rules:
+    - name: "high_latency"
+      condition: "latency > 300"
+      severity: "warning"
+      enabled: true
+
+    - name: "critical_latency"
+      condition: "latency > 500"
+      severity: "critical"
+      enabled: true
+
+    - name: "connection_lost"
+      condition: "disconnected"
+      severity: "critical"
+      enabled: true
+
+    - name: "low_battery"
+      condition: "battery < 20"
+      severity: "warning"
+      enabled: true
+
+    - name: "emergency_state"
+      condition: "emergency_level >= 3"
+      severity: "critical"
+      enabled: true
+
+  # 通知配置
+  notifications:
+    websocket: true
+    log: true
+    email: false
+
+# 预测模型配置
+prediction:
+  enabled: false  # 可配置开关
+  model_endpoint: "http://localhost:8090/predict"
+  compensation_enabled: false
+
+  parameters:
+    prediction_horizon: 2.0     # 预测时间范围 (秒)
+    update_rate_hz: 10          # 预测更新频率
+    confidence_threshold: 0.8   # 置信度阈值
+
+# TURN/STUN 服务器配置
+turn:
+  enabled: true
+  server: "your-turn-server.com"
+  port: 3478
+  realm: "fsm-pilot"
+  credentials:
+    username: "fsm_turn"
+    password: "your_secure_password"
+
+# 数据库配置 (可选)
+database:
+  enabled: false
+  redis:
+    host: "localhost"
+    port: 6379
+    password: ""
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "fsm_pilot"
+    username: "fsm_user"
+    password: ""
+
+# 日志配置
+logging:
+  level: "info"
+  file: "/var/log/fsm_cloud.log"
+  max_size_mb: 50
+  max_files: 10
+
+# API 配置
+api:
+  cors_enabled: true
+  cors_origins:
+    - "http://localhost:3000"
+    - "https://your-frontend-domain.com"
+
+  rate_limit:
+    enabled: true
+    requests_per_minute: 1000
+
+  auth:
+    enabled: false
+    jwt_secret: "your_jwt_secret_key"

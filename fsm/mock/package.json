@@ -1,0 +1,12 @@
+{
+  "name": "fsm-mock-server",
+  "version": "1.0.0",
+  "description": "FSM-Pilot Mock Data Server",
+  "main": "mock_server.js",
+  "scripts": {
+    "start": "node mock_server.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.0"
+  }
+}

@@ -1,0 +1,124 @@
+/* V11 Theme System */
+:root {
+  --primary: #00f2ff;
+  --primary-dim: rgba(0, 242, 255, 0.15);
+  --warn: #ffcc00;
+  --danger: #ff0055;
+  --success: #00ff88;
+  --bg-dark: #020408;
+  --bg-panel: #0a1018;
+  --border: #1f3a52;
+
+  --header-h: 40px;
+  --ai-h: 30px;
+  --footer-h: 85px;
+  --side-w: 280px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg-dark);
+  color: #ccc;
+  font-family: 'Segoe UI', 'Consolas', monospace;
+  font-size: 11px;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+/* Common Button Styles */
+.btn-ui {
+  background: transparent;
+  border: 1px solid #444;
+  color: #aaa;
+  padding: 4px 10px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 2px;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.btn-ui:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(0, 242, 255, 0.05);
+}
+
+.btn-ui.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-dim);
+}
+
+.btn-ui.btn-play {
+  background: var(--primary-dim);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.btn-ui.btn-play:hover {
+  background: rgba(0, 242, 255, 0.25);
+}
+
+.btn-mini {
+  border: none;
+  color: var(--primary);
+  background: transparent;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.btn-mini:hover {
+  color: #fff;
+}
+
+/* Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Transitions */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}

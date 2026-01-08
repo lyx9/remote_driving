@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FSM-Pilot V1.1 | Quad PIP Mode</title>
+    
+    <!-- 依赖库 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.0/dist/ffmpeg.min.js"></script>
+
+    <style>
+        /* --- V11 主题系统 --- */
+        :root {
+            --primary: #00f2ff;
+            --primary-dim: rgba(0, 242, 255, 0.15);
+            --warn: #ffcc00;
+            --danger: #ff0055;
+            --success: #00ff88;
+            --bg-dark: #020408;
+            --bg-panel: #0a1018;
+            --border: #1f3a52;
+            
+            --header-h: 40px;
+            --ai-h: 30px;
+            --footer-h: 85px;
+            --side-w: 280px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: var(--bg-dark); color: #ccc; 
+            font-family: 'Segoe UI', 'Consolas', monospace; 
+            height: 100vh; width: 100vw; overflow: hidden; 
+            font-size: 11px; user-select: none;
+        }
+
+        /* 布局框架 */
+        .app-container { display: flex; flex-direction: column; height: 100%; }
+
+        /* Header */
+        header {
+            height: var(--header-h); background: #05080e; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between; padding: 0 15px; flex-shrink: 0; z-index: 100;
+        }
+        .brand { font-weight: 800; letter-spacing: 1px; color: #fff; }
+        .brand span { color: var(--primary); }
+
+        /* AI Bar */
+        .ai-bar {
+            height: var(--ai-h); background: #080c12; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; padding: 0 10px; gap: 15px;
+            transition: 0.3s; overflow: hidden; flex-shrink: 0;
+        }
+        .ai-bar.collapsed { height: 0; border: none; opacity: 0; }
+        .tag { background: #111; border: 1px solid #333; padding: 2px 6px; border-radius: 3px; display: flex; gap:5px; align-items:center; }
+
+        /* Stage */
+        .stage {
+            flex: 1; display: flex; overflow: hidden; position: relative;
+            height: calc(100vh - var(--header-h) - var(--ai-h) - var(--footer-h));
+        }
+
+        /* Sidebars */
+        .sidebar {
+            width: var(--side-w); background: #000; border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden; flex-shrink: 0; z-index: 50;
+        }
+        .sidebar.right { border-right: none; border-left: 1px solid var(--border); }
+        .sidebar.collapsed { width: 0; border: none; }
+        .sidebar-inner { width: var(--side-w); height: 100%; display: flex; flex-direction: column; }
+
+        .card { flex: 1; display: flex; flex-direction: column; border-bottom: 1px solid #222; min-height: 0; }
+        .card-h { padding: 6px 10px; background: rgba(0, 242, 255, 0.05); color: var(--primary); font-weight: bold; border-bottom: 1px solid #222; font-size: 10px; }
+        .card-b { flex: 1; overflow: hidden; position: relative; background: var(--bg-panel); padding: 8px; }
+
+        /* --- 视频墙与悬浮窗口 --- */
+        .center-view { flex: 1; display: flex; flex-direction: column; background: #000; min-width: 0; position: relative; }
+        
+        .video-wall {
+            flex: 1; position: relative; background: #000; min-height: 0; overflow: hidden;
+        }
+
+        /* 通用摄像头槽位 */
+        .cam-slot { 
+            background: #050505; border: 1px solid #222; overflow: hidden; 
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .cam-slot video, .cam-slot canvas {
+            position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important;
+            object-fit: fill; display: block;
+        }
+        .cam-slot video { display: none; }
+
+        /* 主摄像头 (全屏背景) */
+        .cam-main {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1; border: none;
+        }
+
+        /* 悬浮摄像头 (PIP) 通用样式 */
+        .cam-pip {
+            position: absolute; 
+            width: 24%; /* 占屏幕宽度的24% */
+            min-width: 240px; 
+            aspect-ratio: 4 / 3; /* 强制 4:3 */
+            z-index: 20; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.8);
+            border: 1px solid var(--primary);
+            background: #000;
+        }
+
+        /* --- 位置与折叠动画 --- */
+        
+        /* 上方窗口 */
+        .cam-pip.top { top: 10px; }
+        .cam-pip.top.left { left: 10px; }
+        .cam-pip.top.right { right: 10px; }
+        /* 上方折叠：往上飞 */
+        .cam-pip.top.collapsed { transform: scale(0.8); opacity: 0; pointer-events: none; top: -100px; }
+
+        /* 下方窗口 (新增) */
+        .cam-pip.bottom { bottom: 10px; }
+        .cam-pip.bottom.left { left: 10px; }
+        .cam-pip.bottom.right { right: 10px; }
+        /* 下方折叠：往下飞 */
+        .cam-pip.bottom.collapsed { transform: scale(0.8); opacity: 0; pointer-events: none; bottom: -100px; }
+
+        /* 控制条 */
+        .cam-ctrls {
+            position: absolute; bottom: 0; left: 0; width: 100%; padding: 5px;
+            background: rgba(0,0,0,0.8); border-top: 1px solid var(--primary);
+            display: flex; align-items: center; justify-content: space-between;
+            transform: translateY(100%); transition: 0.2s; z-index: 20;
+        }
+        .cam-slot:hover .cam-ctrls { transform: translateY(0); }
+
+        /* 同步指示器 */
+        .sync-badge {
+            font-size: 9px; padding: 2px 4px; background: #333; color: #888; border-radius: 2px; margin-left: 5px;
+            transition: 0.3s;
+        }
+        .sync-badge.active { background: var(--success); color: #000; font-weight: bold; box-shadow: 0 0 5px var(--success); }
+
+        /* Lidar */
+        .lidar-panel { height: 180px; border-top: 1px solid var(--border); position: relative; background: #000; transition: height 0.3s; flex-shrink: 0; z-index: 30; }
+        .lidar-panel.collapsed { height: 0; border: none; }
+
+        /* UI Components */
+        .gear-box { display: flex; gap: 5px; justify-content: center; margin-bottom: 10px; }
+        .gear-btn {
+            width: 35px; height: 35px; border: 1px solid #444; color: #666; font-weight: bold;
+            display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer;
+            background: #0e151e; transition: 0.2s;
+        }
+        .gear-btn.active { border-color: var(--primary); color: #fff; background: var(--primary-dim); box-shadow: 0 0 10px var(--primary-dim); }
+
+        .rec-panel {
+            display: flex; align-items: center; justify-content: space-between; 
+            background: rgba(255, 255, 255, 0.05); padding: 8px; border: 1px solid #333; margin-bottom: 10px;
+        }
+        .rec-dot { width: 10px; height: 10px; background: #555; border-radius: 50%; margin-right: 5px; }
+        .rec-dot.recording { background: var(--danger); animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        
+        footer {
+            height: var(--footer-h); background: #05080e; border-top: 1px solid var(--border);
+            display: flex; overflow-x: auto; padding: 5px; gap: 5px; flex-shrink: 0;
+        }
+        .fleet-card {
+            min-width: 150px; border: 1px solid #333; background: #0a1018; padding: 6px;
+            cursor: pointer; display: flex; flex-direction: column; justify-content: space-between; position: relative;
+        }
+        .fleet-card.active { border-color: var(--primary); background: rgba(0, 242, 255, 0.05); }
+        .fleet-card.active::after { content:''; position:absolute; top:0; right:0; width:0; height:0; border-top:10px solid var(--primary); border-left:10px solid transparent; }
+        
+        .f-money { color: var(--warn); font-weight: bold; font-size: 12px; }
+        .f-status { display: inline-block; padding: 1px 4px; border-radius: 2px; font-size: 9px; background: #222; margin-top: 2px; }
+
+        .btn-ui { background: transparent; border: 1px solid #444; color: #aaa; padding: 3px 8px; font-size: 10px; cursor: pointer; }
+        .btn-ui:hover, .btn-ui.active { border-color: var(--primary); color: var(--primary); }
+        .btn-rec { background: var(--danger); color: #fff; border: none; font-weight: bold; }
+        .btn-play { background: var(--primary-dim); border-color: var(--primary); color: #fff; }
+        .btn-mini { border:none; color: var(--primary); background: transparent; cursor: pointer; font-weight: bold; }
+        .btn-mini:hover { color: #fff; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <!-- Header -->
+    <header>
+        <div class="brand">FSM-<span>PILOT</span> V1.1</div>
+        <div style="display:flex; gap:5px;">
+            <button class="btn-ui active" onclick="toggle('left')">MAP</button>
+            <button class="btn-ui active" onclick="toggle('ai')">AI-BAR</button>
+            <button class="btn-ui active" onclick="toggle('lidar')">LIDAR</button>
+            <button class="btn-ui active" id="btn-pip-toggle" onclick="toggle('pip')">PIP (4)</button>
+            <button class="btn-ui active" onclick="toggle('right')">CTRL</button>
+        </div>
+        <div>
+            <span id="sys-time" style="color:#fff; font-weight:bold; margin-right:10px;">00:00:00</span>
+            <span id="rec-status" style="color:#555; font-size:10px;">STANDBY</span>
+        </div>
+    </header>
+
+    <!-- AI Bar -->
+    <div class="ai-bar" id="ai-con">
+        <div class="tag"><span style="color:var(--primary)">ID:</span> <span id="tag-id">--</span></div>
+        <div class="tag"><span style="color:var(--warn)">PROFIT:</span> <span id="tag-money">$0.00</span></div>
+        <div style="flex:1; display:flex; align-items:center; gap:5px; margin-left:10px;">
+            <span style="font-size:9px; color:#666">CONFIDENCE</span>
+            <div style="flex:1; height:4px; background:#222;"><div id="ai-conf" style="width:0%; height:100%; background:var(--primary)"></div></div>
+        </div>
+    </div>
+
+    <!-- Stage -->
+    <div class="stage">
+        
+        <!-- Left Sidebar -->
+        <div class="sidebar" id="side-left">
+            <div class="sidebar-inner">
+                <div class="card" style="flex:2">
+                    <div class="card-h">LIVE NAVIGATION</div>
+                    <div class="card-b" style="padding:0"><div id="map" style="width:100%; height:100%;"></div></div>
+                </div>
+                <div class="card" style="flex:1">
+                    <div class="card-h">SYSTEM LOG</div>
+                    <div class="card-b">
+                        <div id="log-box" style="height:100%; overflow-y:auto; font-family:monospace; color:#777;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center View (Video Wall) -->
+        <div class="center-view">
+            <div class="video-wall">
+                
+                <!-- Main Cam (Background) -->
+                <div class="cam-slot cam-main">
+                    <canvas id="c2"></canvas>
+                    <video id="v2" loop muted playsinline></video>
+                    <div class="cam-ctrls">
+                        <div style="display:flex; align-items:center;">
+                            <span style="font-size:9px; color:var(--primary)">MAIN_CAM</span>
+                            <span class="sync-badge active" id="sync-s2">MASTER</span>
+                        </div>
+                        <div style="display:flex; gap:5px">
+                            <button class="btn-ui btn-play" onclick="syncReplay()">↻ REPLAY ALL</button>
+                            <button class="btn-ui" onclick="toggleSyncPlay()" id="btn-master-play">PAUSE</button>
+                            <button class="btn-ui" onclick="upload('v2')">LOAD</button>
+                            <input type="file" id="f-v2" hidden accept="video/*" onchange="handleFile(this,'v2','c2')">
+                        </div>
+                    </div>
+                    <!-- Crosshair -->
+                    <div style="position:absolute; top:50%; left:50%; width:20px; height:20px; border:1px solid rgba(255,255,255,0.4); transform:translate(-50%,-50%); pointer-events:none;"></div>
+                </div>
+
+                <!-- PIP 1: Top Left -->
+                <div class="cam-slot cam-pip top left" id="pip-tl">
+                    <canvas id="c1"></canvas>
+                    <video id="v1" loop muted playsinline></video>
+                    <div class="cam-ctrls">
+                        <div><span style="font-size:9px; color:#fff">FRONT_L</span> <span class="sync-badge" id="sync-s1">SYNC</span></div>
+                        <div style="display:flex; gap:5px">
+                            <button class="btn-mini" onclick="toggle('pip')" title="Minimize">_</button>
+                            <button class="btn-ui" onclick="upload('v1')">LOAD</button>
+                            <input type="file" id="f-v1" hidden accept="video/*" onchange="handleFile(this,'v1','c1')">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PIP 2: Top Right -->
+                <div class="cam-slot cam-pip top right" id="pip-tr">
+                    <canvas id="c3"></canvas>
+                    <video id="v3" loop muted playsinline></video>
+                    <div class="cam-ctrls">
+                        <div><span style="font-size:9px; color:#fff">FRONT_R</span> <span class="sync-badge" id="sync-s3">SYNC</span></div>
+                        <div style="display:flex; gap:5px">
+                            <button class="btn-mini" onclick="toggle('pip')" title="Minimize">_</button>
+                            <button class="btn-ui" onclick="upload('v3')">LOAD</button>
+                            <input type="file" id="f-v3" hidden accept="video/*" onchange="handleFile(this,'v3','c3')">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PIP 3: Bottom Left (New) -->
+                <div class="cam-slot cam-pip bottom left" id="pip-bl">
+                    <canvas id="c4"></canvas>
+                    <video id="v4" loop muted playsinline></video>
+                    <div class="cam-ctrls">
+                        <div><span style="font-size:9px; color:#fff">REAR_L</span> <span class="sync-badge" id="sync-s4">SYNC</span></div>
+                        <div style="display:flex; gap:5px">
+                            <button class="btn-mini" onclick="toggle('pip')" title="Minimize">_</button>
+                            <button class="btn-ui" onclick="upload('v4')">LOAD</button>
+                            <input type="file" id="f-v4" hidden accept="video/*" onchange="handleFile(this,'v4','c4')">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PIP 4: Bottom Right (New) -->
+                <div class="cam-slot cam-pip bottom right" id="pip-br">
+                    <canvas id="c5"></canvas>
+                    <video id="v5" loop muted playsinline></video>
+                    <div class="cam-ctrls">
+                        <div><span style="font-size:9px; color:#fff">REAR_R</span> <span class="sync-badge" id="sync-s5">SYNC</span></div>
+                        <div style="display:flex; gap:5px">
+                            <button class="btn-mini" onclick="toggle('pip')" title="Minimize">_</button>
+                            <button class="btn-ui" onclick="upload('v5')">LOAD</button>
+                            <input type="file" id="f-v5" hidden accept="video/*" onchange="handleFile(this,'v5','c5')">
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Lidar -->
+            <div class="lidar-panel" id="lidar-con">
+                 <div id="three-stage" style="width:100%; height:100%;"></div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="sidebar right" id="side-right">
+            <div class="sidebar-inner">
+                <!-- Gears -->
+                <div class="card" style="flex:0 0 auto;">
+                    <div class="card-h">TRANSMISSION</div>
+                    <div class="card-b" style="padding:15px 10px;">
+                        <div class="gear-box">
+                            <div class="gear-btn" id="g-P" onclick="setGear('P')">P</div>
+                            <div class="gear-btn" id="g-R" onclick="setGear('R')">R</div>
+                            <div class="gear-btn" id="g-N" onclick="setGear('N')">N</div>
+                            <div class="gear-btn active" id="g-D" onclick="setGear('D')">D</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Black Box -->
+                <div class="card" style="flex:0 0 auto;">
+                    <div class="card-h">BLACK BOX</div>
+                    <div class="card-b">
+                        <div class="rec-panel">
+                            <div style="display:flex; align-items:center;">
+                                <div class="rec-dot" id="rec-dot"></div>
+                                <span style="font-size:10px; font-weight:bold; color:#fff;">DRIVE LOG</span>
+                            </div>
+                            <button class="btn-ui btn-rec" id="btn-rec" onclick="toggleRecord()">● REC</button>
+                        </div>
+                        <div style="font-size:9px; color:#666; padding:0 5px;">
+                            Syncs 5 video feeds and telemetry to local storage.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Telemetry -->
+                <div class="card" style="flex:1">
+                    <div class="card-h">TELEMETRY</div>
+                    <div class="card-b" style="text-align:center;">
+                        <div style="font-size:40px; color:#fff; font-weight:bold; margin-top:20px;" id="val-speed">0</div>
+                        <div style="color:#666; font-size:10px;">KM/H</div>
+                        <div style="margin-top:20px; width:120px; height:120px; border:4px solid #222; border-radius:50%; margin-left:auto; margin-right:auto; position:relative;" id="wheel">
+                            <div style="position:absolute; top:0; left:50%; width:4px; height:20px; background:var(--primary); transform:translateX(-50%)"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer id="fleet-list"></footer>
+
+</div>
+
+<script>
+    /* ================= 1. SYSTEM CORE & CONFIG ================= */
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    let ffmpeg = null;
+    let map, mapPolyline, mapMarker;
+    let isRecording = false;
+    let recordStartTime = 0;
+    let sessionLogs = [];
+
+    const fleetData = [
+        { 
+            id: 'FSM-01', type: 'ROBO-TAXI', status: 'ACTIVE', money: 1245.50, mode: 'ECO',
+            loc: [31.2304, 121.4737], 
+            path: [[31.225, 121.470], [31.228, 121.472], [31.2304, 121.4737]] 
+        },
+        { 
+            id: 'FSM-02', type: 'LOGISTICS', status: 'IDLE', money: 450.20, mode: 'SPORT',
+            loc: [31.235, 121.480], 
+            path: [[31.240, 121.485], [31.238, 121.482], [31.235, 121.480]]
+        },
+        { 
+            id: 'FSM-03', type: 'SECURITY', status: 'PATROL', money: 0.00, mode: 'AI-HUNT',
+            loc: [31.220, 121.460], 
+            path: [[31.215, 121.455], [31.218, 121.458], [31.220, 121.460]]
+        }
+    ];
+    let currCarIdx = 0;
+
+    /* ================= 2. VIDEO SYNC ENGINE (UPDATED FOR 5 SCREENS) ================= */
+    
+    // 获取所有视频元素: 1=FrontL, 2=Master, 3=FrontR, 4=RearL, 5=RearR
+    const getVids = () => [
+        document.getElementById('v1'), document.getElementById('v2'), document.getElementById('v3'),
+        document.getElementById('v4'), document.getElementById('v5')
+    ];
+
+    function syncReplay() {
+        const vids = getVids();
+        let readyCount = 0;
+        vids.forEach(v => {
+            if(v.getAttribute('src')) {
+                v.currentTime = 0;
+                v.play();
+                readyCount++;
+            }
+        });
+        log(`SYNC REPLAY: Triggered on ${readyCount} cameras.`);
+        updateSyncUI(true);
+    }
+
+    function toggleSyncPlay() {
+        const master = document.getElementById('v2');
+        const vids = getVids();
+        const btn = document.getElementById('btn-master-play');
+
+        if(master.paused) {
+            vids.forEach(v => { if(v.src) v.play(); });
+            btn.innerText = "PAUSE";
+            log("SYNC: Resuming all feeds.");
+        } else {
+            vids.forEach(v => { if(v.src) v.pause(); });
+            btn.innerText = "PLAY";
+            log("SYNC: Pausing all feeds.");
+        }
+    }
+
+    function initSyncListeners() {
+        const master = document.getElementById('v2');
+        // Slaves: v1, v3, v4, v5
+        const slaves = [
+            document.getElementById('v1'), document.getElementById('v3'),
+            document.getElementById('v4'), document.getElementById('v5')
+        ];
+
+        master.addEventListener('play', () => {
+            slaves.forEach(v => { if(v.src && v.paused) v.play(); });
+            updateSyncUI(true);
+        });
+
+        master.addEventListener('pause', () => {
+            slaves.forEach(v => { if(v.src && !v.paused) v.pause(); });
+            updateSyncUI(false);
+        });
+
+        master.addEventListener('seeked', () => {
+            slaves.forEach(v => { if(v.src) v.currentTime = master.currentTime; });
+            log(`SYNC: Time aligned to ${master.currentTime.toFixed(2)}s`);
+        });
+    }
+
+    function updateSyncUI(isPlaying) {
+        ['s1','s2','s3','s4','s5'].forEach(id => {
+            const el = document.getElementById('sync-'+id);
+            if(el) el.classList.toggle('active', isPlaying);
+        });
+        document.getElementById('btn-master-play').innerText = isPlaying ? "PAUSE" : "PLAY";
+    }
+
+    /* ================= 3. SYSTEM FUNCTIONS ================= */
+
+    async function initSystem() {
+        initMap();
+        initThree();
+        initFleet();
+        initNoise();
+        updateTime();
+        initSyncListeners();
+        
+        if(!ffmpeg) {
+            try {
+                ffmpeg = createFFmpeg({ corePath: 'https://unpkg.com/@ffmpeg/core@0.10.0/dist/ffmpeg-core.js', log: false });
+                await ffmpeg.load();
+                log("System Ready. Video core loaded.");
+            } catch(e) { console.error(e); log("Video Core Error."); }
+        }
+    }
+
+    function log(msg) {
+        const t = new Date().toLocaleTimeString();
+        const line = `[${t}] ${msg}`;
+        const box = document.getElementById('log-box');
+        box.innerHTML = `<div style="border-bottom:1px solid #1a1a1a; padding:2px;">${line}</div>` + box.innerHTML;
+        if(isRecording) sessionLogs.push(line);
+    }
+
+    function toggleRecord() {
+        const btn = document.getElementById('btn-rec');
+        const dot = document.getElementById('rec-dot');
+        const status = document.getElementById('rec-status');
+
+        if(!isRecording) {
+            isRecording = true;
+            recordStartTime = Date.now();
+            sessionLogs = ["--- REC START ---", `ID: ${fleetData[currCarIdx].id}`, `Time: ${new Date().toISOString()}`];
+            btn.innerHTML = "■ STOP";
+            dot.classList.add('recording');
+            status.innerText = "● RECORDING";
+            status.style.color = "var(--danger)";
+            log("Black Box Recording Started (5 Channels)...");
+        } else {
+            isRecording = false;
+            btn.innerHTML = "● REC";
+            dot.classList.remove('recording');
+            status.innerText = "STANDBY";
+            status.style.color = "#555";
+            log("Recording Stopped. Saving data...");
+            downloadLogs();
+        }
+    }
+
+    function downloadLogs() {
+        const blob = new Blob([sessionLogs.join('\n')], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${fleetData[currCarIdx].id}_LOG_${Date.now()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    function setGear(g) {
+        document.querySelectorAll('.gear-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('g-'+g).classList.add('active');
+        log(`Shifted to [${g}]`);
+    }
+
+    function upload(id) { document.getElementById('f-'+id).click(); }
+    
+    async function handleFile(input, vidId, cvsId) {
+        const file = input.files[0];
+        if(!file) return;
+        const v = document.getElementById(vidId);
+        const c = document.getElementById(cvsId);
+
+        c.style.display = 'block'; v.style.display = 'none';
+        v.src = URL.createObjectURL(file);
+        v.muted = true;
+
+        v.onerror = async () => {
+            log(`Format Error. Transcoding ${vidId}...`);
+            try {
+                ffmpeg.FS('writeFile', 'in', await fetchFile(file));
+                await ffmpeg.run('-i', 'in', '-c:v', 'libx264', '-preset', 'ultrafast', '-s', '640x360', 'out.mp4');
+                const data = ffmpeg.FS('readFile', 'out.mp4');
+                v.src = URL.createObjectURL(new Blob([data.buffer], {type:'video/mp4'}));
+                v.onloadedmetadata = () => { c.style.display='none'; v.style.display='block'; v.play(); };
+            } catch(e) { log("Transcode failed."); }
+        };
+        v.onloadedmetadata = () => { 
+            c.style.display='none'; v.style.display='block'; 
+            v.play(); 
+            log(`Loaded source to ${vidId}`);
+        };
+    }
+
+    function toggle(area) {
+        if(area==='ai') document.getElementById('ai-con').classList.toggle('collapsed');
+        if(area==='lidar') { document.getElementById('lidar-con').classList.toggle('collapsed'); setTimeout(resizeThree, 350); }
+        if(area==='left') { document.getElementById('side-left').classList.toggle('collapsed'); setTimeout(()=>map.invalidateSize(), 350); }
+        if(area==='right') document.getElementById('side-right').classList.toggle('collapsed');
+        
+        // PIP Toggle for all 4 PIP windows
+        if(area==='pip') {
+            document.getElementById('pip-tl').classList.toggle('collapsed');
+            document.getElementById('pip-tr').classList.toggle('collapsed');
+            document.getElementById('pip-bl').classList.toggle('collapsed');
+            document.getElementById('pip-br').classList.toggle('collapsed');
+            document.getElementById('btn-pip-toggle').classList.toggle('active');
+        }
+    }
+
+    /* ================= 4. MAP & DATA ================= */
+
+    function initMap() {
+        map = L.map('map', {zoomControl: false, attributionControl:false}).setView([31.23, 121.47], 14);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+    }
+
+    function initFleet() {
+        const con = document.getElementById('fleet-list');
+        con.innerHTML = '';
+        fleetData.forEach((car, i) => {
+            con.innerHTML += `
+            <div class="fleet-card ${i===0?'active':''}" onclick="selectCar(${i}, this)">
+                <div style="font-weight:bold; color:#fff">${car.id}</div>
+                <div class="f-status" style="color:${car.status==='ACTIVE'?'#0f0':'#aaa'}">${car.status}</div>
+                <div style="margin-top:5px; display:flex; justify-content:space-between; align-items:flex-end;">
+                    <span style="font-size:9px; color:#666">${car.type}</span>
+                    <span class="f-money">$${car.money.toFixed(2)}</span>
+                </div>
+            </div>`;
+        });
+        selectCar(0, document.querySelector('.fleet-card'));
+    }
+
+    function selectCar(idx, el) {
+        currCarIdx = idx;
+        const car = fleetData[idx];
+        document.querySelectorAll('.fleet-card').forEach(b => b.classList.remove('active'));
+        if(el) el.classList.add('active');
+        
+        document.getElementById('tag-id').innerText = car.id;
+        document.getElementById('tag-money').innerText = '$' + car.money.toFixed(2);
+        
+        if(mapMarker) map.removeLayer(mapMarker);
+        if(mapPolyline) map.removeLayer(mapPolyline);
+
+        mapPolyline = L.polyline(car.path, {color: '#00f2ff', weight: 3, opacity: 0.7}).addTo(map);
+        mapMarker = L.circleMarker(car.loc, {radius: 6, color: '#fff', fillColor: '#00f2ff', fillOpacity: 1}).addTo(map);
+        map.flyTo(car.loc, 14);
+        log(`Vehicle [${car.id}] Selected.`);
+        syncReplay();
+    }
+
+    /* ================= 5. ANIMATIONS ================= */
+    
+    function initNoise() {
+        ['c1','c2','c3','c4','c5'].forEach(id => {
+            const cvs = document.getElementById(id);
+            const ctx = cvs.getContext('2d');
+            setInterval(() => {
+                if(cvs.style.display==='none') return;
+                const w = cvs.parentElement.offsetWidth;
+                const h = cvs.parentElement.offsetHeight;
+                if(cvs.width!==w) { cvs.width=w; cvs.height=h; }
+                
+                ctx.fillStyle = '#080808'; ctx.fillRect(0,0,w,h);
+                for(let i=0; i<200; i++) {
+                    ctx.fillStyle = Math.random()>0.5 ? '#1a1a1a' : '#000';
+                    ctx.fillRect(Math.random()*w, Math.random()*h, 2, 2);
+                }
+                ctx.fillStyle = '#444'; ctx.textAlign='center'; ctx.fillText('NO SIGNAL', w/2, h/2);
+            }, 100);
+        });
+    }
+
+    function updateTime() {
+        setInterval(() => {
+            document.getElementById('sys-time').innerText = new Date().toLocaleTimeString();
+            const car = fleetData[currCarIdx];
+            if(car.status === 'ACTIVE') {
+                const speed = Math.floor(30 + (Math.random()-0.5)*10);
+                document.getElementById('val-speed').innerText = speed;
+                if(Math.random() > 0.8) {
+                    car.money += 0.05;
+                    document.getElementById('tag-money').innerText = '$' + car.money.toFixed(2);
+                }
+                document.getElementById('ai-conf').style.width = (80 + Math.random()*20) + "%";
+                document.getElementById('wheel').style.transform = `rotate(${(Math.random()-0.5)*20}deg)`;
+            } else {
+                document.getElementById('val-speed').innerText = 0;
+            }
+        }, 500);
+    }
+
+    let renderer, scene, camera;
+    function initThree() {
+        const con = document.getElementById('three-stage');
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.04);
+        camera = new THREE.PerspectiveCamera(60, con.clientWidth/con.clientHeight, 0.1, 100);
+        camera.position.set(0, 4, 6); camera.lookAt(0,0,-4);
+        renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
+        renderer.setSize(con.clientWidth, con.clientHeight);
+        con.appendChild(renderer.domElement);
+        
+        const grid = new THREE.GridHelper(60, 40, 0x00f2ff, 0x111);
+        scene.add(grid);
+        const car = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 2), new THREE.MeshBasicMaterial({color:0x00f2ff, wireframe:true}));
+        car.position.y = 0.25; scene.add(car);
+
+        const lineGeo = new THREE.BufferGeometry();
+        const pts = new Float32Array(100 * 3);
+        lineGeo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+        const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color:0x00ff00}));
+        scene.add(line);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            grid.position.z = (grid.position.z + 0.2) % 1.5;
+            const t = Date.now() * 0.003;
+            const pos = line.geometry.attributes.position.array;
+            for(let i=0; i<100; i++) {
+                pos[i*3] = Math.sin(i*0.1 + t) * (i*0.05); 
+                pos[i*3+1] = 0.1; 
+                pos[i*3+2] = -i * 0.5;
+            }
+            line.geometry.attributes.position.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+        animate();
+    }
+    
+    function resizeThree() {
+        const con = document.getElementById('three-stage');
+        if(renderer && con.clientHeight>0) {
+            camera.aspect = con.clientWidth/con.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(con.clientWidth, con.clientHeight);
+        }
+    }
+
+    window.onload = initSystem;
+
+</script>
+</body>
+</html>

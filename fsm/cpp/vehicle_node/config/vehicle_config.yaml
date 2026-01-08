@@ -1,0 +1,126 @@
+# FSM-Pilot 车端配置文件
+# 版本: 1.1
+
+vehicle:
+  id: "FSM-01"
+  type: "ROBO-TAXI"
+  name: "测试车辆1号"
+
+  # 车辆物理参数
+  parameters:
+    wheelbase: 2.7           # 轴距 (m)
+    max_steering_angle: 35   # 最大转向角 (度)
+    max_speed: 60            # 最大速度 (km/h)
+    max_acceleration: 2.0    # 最大加速度 (m/s²)
+    max_deceleration: 5.0    # 最大减速度 (m/s²)
+    track_width: 1.5         # 轮距 (m)
+
+# 传感器配置
+sensors:
+  cameras:
+    enabled: true
+    list:
+      - id: "cam_front_center"
+        topic: "/sensing/camera/traffic_light/image_raw"
+        fps: 30
+        width: 1920
+        height: 1080
+        encoding: "h264"
+        bitrate: 4000000
+        enabled: true
+
+      - id: "cam_front_left"
+        topic: "/sensing/camera/front_left/image_raw"
+        fps: 30
+        width: 1280
+        height: 720
+        encoding: "h264"
+        bitrate: 2000000
+        enabled: true
+
+      - id: "cam_front_right"
+        topic: "/sensing/camera/front_right/image_raw"
+        fps: 30
+        width: 1280
+        height: 720
+        encoding: "h264"
+        bitrate: 2000000
+        enabled: true
+
+      - id: "cam_rear_left"
+        topic: "/sensing/camera/rear_left/image_raw"
+        fps: 30
+        width: 1280
+        height: 720
+        encoding: "h264"
+        bitrate: 2000000
+        enabled: true
+
+      - id: "cam_rear_right"
+        topic: "/sensing/camera/rear_right/image_raw"
+        fps: 30
+        width: 1280
+        height: 720
+        encoding: "h264"
+        bitrate: 2000000
+        enabled: true
+
+  # 传感器话题 (Autoware.universe 兼容)
+  topics:
+    velocity_status: "/vehicle/status/velocity_status"
+    steering_status: "/vehicle/status/steering_status"
+    gear_status: "/vehicle/status/gear_status"
+    control_mode: "/vehicle/status/control_mode"
+    turn_indicators: "/vehicle/status/turn_indicators_status"
+    hazard_lights: "/vehicle/status/hazard_lights_status"
+    localization: "/localization/kinematic_state"
+    diagnostics: "/diagnostics_agg"
+
+# WebRTC配置
+webrtc:
+  stun_servers:
+    - "stun:stun.l.google.com:19302"
+    - "stun:stun1.l.google.com:19302"
+
+  turn_servers:
+    - url: "turn:your-turn-server.com:3478"
+      username: "fsm_user"
+      credential: "your_password"
+
+  signaling:
+    url: "wss://your-signaling-server.com/ws"
+    reconnect_interval: 5000  # ms
+    heartbeat_interval: 1000  # ms
+
+  video:
+    codec: "h264"
+    max_bitrate: 8000000  # 8 Mbps 总带宽
+    adaptive_bitrate: true
+
+# 控制配置
+control:
+  # Autoware 控制话题
+  topics:
+    steering_cmd: "/control/command/steering_cmd"
+    velocity_cmd: "/control/command/velocity_cmd"
+    gear_cmd: "/vehicle/command/gear_cmd"
+    turn_signal_cmd: "/vehicle/command/turn_indicators_cmd"
+    hazard_cmd: "/vehicle/command/hazard_lights_cmd"
+    emergency: "/system/emergency/emergency_cmd"
+
+  # 安全限制
+  safety:
+    max_steering_rate: 30      # 度/秒
+    max_acceleration: 2.0      # m/s²
+    max_deceleration: 5.0      # m/s²
+    emergency_decel: 9.0       # m/s²
+    watchdog_timeout_ms: 200   # 看门狗超时
+    enable_soft_limits: true
+    enable_emergency_stop: true
+
+# 日志配置
+logging:
+  level: "info"  # trace, debug, info, warn, error, critical
+  file: "/tmp/fsm_vehicle.log"
+  max_size_mb: 10
+  max_files: 3
