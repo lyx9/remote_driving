@@ -1,6 +1,14 @@
 /**
- * FSM-Pilot Demo 模式 Composable
- * 提供完整的演示功能，包括 Mock 数据、模拟控制和场景触发
+ * FSM-Pilot V2.0 - Remote Driving System
+ *
+ * @project     FSM-Pilot Remote Driving Platform
+ * @author      Li Yixiang
+ * @institution City University of Hong Kong
+ * @copyright   2025 City University of Hong Kong. All rights reserved.
+ * @license     Proprietary
+ *
+ * @module      Demo Mode Composable
+ * @description 演示模式模块，提供完整的演示功能，包括Mock数据、模拟控制和场景触发
  */
 
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'

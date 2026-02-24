@@ -1,3 +1,15 @@
+<!--
+  Guardian Mobility v0.0 - Remote Driving System
+
+  @project     Guardian Mobility Remote Driving Platform
+  @author      Li Yixiang
+  @institution City University of Hong Kong
+  @copyright   2025 City University of Hong Kong. All rights reserved.
+  @license     Proprietary
+
+  @component   FleetFooter
+  @description Fleet footer component displaying all vehicle cards
+-->
 <template>
   <footer class="fleet-footer">
     <div
@@ -72,7 +84,7 @@ const handleSelectVehicle = (index: number) => {
 
 .fleet-card.active {
   border-color: var(--primary);
-  background: rgba(0, 242, 255, 0.05);
+  background: rgba(255, 87, 34, 0.05);
 }
 
 .fleet-card.active::after {

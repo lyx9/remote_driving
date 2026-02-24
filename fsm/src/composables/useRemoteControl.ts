@@ -1,14 +1,48 @@
 /**
- * FSM-Pilot 远程控制 Composable
- * 整合 WebSocket、WebRTC 和 API 服务，提供统一的远程控制接口
+ * FSM-Pilot V2.0 - Remote Driving System
+ *
+ * @project     FSM-Pilot Remote Driving Platform
+ * @author      Li Yixiang
+ * @institution City University of Hong Kong
+ * @copyright   2025 City University of Hong Kong. All rights reserved.
+ * @license     Proprietary
+ *
+ * @module      Remote Control Composable
+ * @description 远程控制模块，整合WebSocket、WebRTC和API服务，提供统一的远程控制接口
+ *              注意：此模块需要在 main.ts 中初始化服务后使用
  */
 
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useFleetStore } from '@/stores/fleet'
 import { useSystemStore } from '@/stores/system'
-import { webSocketService, type VehicleStatusMessage, type AlertMessage } from '@/services/websocket'
-import { apiService, type VehicleInfo, type SchedulingQueue } from '@/services/api'
+import { WebSocketService, type WebSocketConfig } from '@/services/websocket'
+import { ApiService, type VehicleInfo, type SchedulingQueueItem, type SchedulingConfig } from '@/services/api'
 import { webrtcManager, type LatencyInfo, type ConnectionState } from '@/services/webrtc'
+
+// 扩展消息类型以匹配实际数据结构
+interface ExtendedVehicleStatusMessage {
+  event: 'vehicle_status'
+  vehicle_id: string
+  timestamp: number
+  speed: number
+  steering: number
+  gear: string
+  location?: { lat: number; lng: number }
+  latency_ms?: number
+}
+
+interface ExtendedAlertMessage {
+  event: 'alert'
+  vehicle_id: string
+  severity: 'info' | 'warning' | 'error' | 'critical'
+  message: string
+}
+
+export interface SchedulingQueue {
+  vehicles: SchedulingQueueItem[]
+  algorithm: string
+  updated_at: string
+}
 
 export interface RemoteControlState {
   isConnected: boolean
@@ -20,6 +54,10 @@ export interface RemoteControlState {
 export function useRemoteControl() {
   const fleetStore = useFleetStore()
   const systemStore = useSystemStore()
+
+  // 服务实例 (懒初始化)
+  let webSocketService: WebSocketService | null = null
+  let apiService: ApiService | null = null
 
   // 状态
   const isConnected = ref(false)
@@ -36,9 +74,29 @@ export function useRemoteControl() {
   // WebRTC 连接管理
   const webrtcConnections = new Map<string, ReturnType<typeof webrtcManager.createConnection>>()
 
+  // 初始化服务
+  function initServices() {
+    const wsConfig: WebSocketConfig = {
+      url: `wss://${window.location.hostname}:8080/ws`,
+      reconnectInterval: 5000,
+      maxReconnectAttempts: 10
+    }
+
+    webSocketService = new WebSocketService(wsConfig)
+    apiService = new ApiService({
+      baseUrl: `https://${window.location.hostname}:8080`
+    })
+  }
+
   // 初始化连接
   async function initialize() {
     try {
+      initServices()
+
+      if (!webSocketService) {
+        throw new Error('WebSocket service not initialized')
+      }
+
       // 1. 连接 WebSocket
       await webSocketService.connect()
       isConnected.value = true
@@ -62,23 +120,28 @@ export function useRemoteControl() {
 
   // 设置 WebSocket 回调
   function setupWebSocketCallbacks() {
-    webSocketService.onVehicleStatus((status: VehicleStatusMessage) => {
+    if (!webSocketService) return
+
+    webSocketService.on('vehicle_status', (msg) => {
+      const status = msg as unknown as ExtendedVehicleStatusMessage
       updateVehicleFromStatus(status)
     })
 
-    webSocketService.onAlert((alert: AlertMessage) => {
+    webSocketService.on('alert', (msg) => {
+      const alert = msg as unknown as ExtendedAlertMessage
       handleAlert(alert)
     })
 
-    webSocketService.onSchedulingUpdate((queue) => {
+    webSocketService.on('scheduling_update', (msg) => {
+      const data = msg as { data: { queue: Array<{ vehicle_id: string; priority: number; task_status?: string; reason?: string }> } }
       schedulingQueue.value = {
-        vehicles: queue.queue.map(item => ({
+        vehicles: data.data.queue.map(item => ({
           vehicle_id: item.vehicle_id,
           priority_score: item.priority,
           emergency_level: 0,
           latency_ms: 0,
-          distance_to_target: 0,
-          battery_level: 100
+          task_status: item.task_status || 'pending',
+          reason: item.reason || ''
         })),
         algorithm: 'weighted_priority',
         updated_at: new Date().toISOString()
@@ -86,18 +149,19 @@ export function useRemoteControl() {
       systemStore.addLog('Scheduling queue updated', 'info')
     })
 
-    webSocketService.onLatencyUpdate((info) => {
+    webSocketService.on('latency_update', (msg) => {
+      const info = msg as { data: { rtt_ms: number; video_latency_ms?: number; control_latency_ms?: number; jitter_ms?: number } }
       latency.value = {
-        rtt_ms: info.rtt_ms,
-        video_latency_ms: info.video_latency_ms || 0,
-        control_latency_ms: info.control_latency_ms || 0,
-        jitter_ms: info.jitter_ms || 0
+        rtt_ms: info.data.rtt_ms,
+        video_latency_ms: info.data.video_latency_ms || 0,
+        control_latency_ms: info.data.control_latency_ms || 0,
+        jitter_ms: info.data.jitter_ms || 0
       }
     })
   }
 
   // 从状态消息更新车辆
-  function updateVehicleFromStatus(status: VehicleStatusMessage) {
+  function updateVehicleFromStatus(status: ExtendedVehicleStatusMessage) {
     const vehicleIndex = fleetStore.vehicles.findIndex(v => v.id === status.vehicle_id)
     if (vehicleIndex >= 0) {
       const vehicle = fleetStore.vehicles[vehicleIndex]
@@ -111,7 +175,7 @@ export function useRemoteControl() {
   }
 
   // 处理告警
-  function handleAlert(alert: AlertMessage) {
+  function handleAlert(alert: ExtendedAlertMessage) {
     const level = alert.severity === 'critical' ? 'error' :
                   alert.severity === 'warning' ? 'warning' : 'info'
     systemStore.addLog(`[${alert.vehicle_id}] ${alert.message}`, level)
@@ -119,23 +183,44 @@ export function useRemoteControl() {
 
   // 加载车辆列表
   async function loadVehicles() {
+    if (!apiService) return
+
     try {
       const vehicles = await apiService.getVehicles()
       // 更新 store 中的车辆信息
       vehicles.forEach((vehicleInfo: VehicleInfo) => {
         const existing = fleetStore.vehicles.find(v => v.id === vehicleInfo.id)
         if (!existing) {
-          fleetStore.vehicles.push({
+          fleetStore.addVehicle({
             id: vehicleInfo.id,
             type: vehicleInfo.type as 'ROBO-TAXI' | 'LOGISTICS' | 'SECURITY',
-            status: vehicleInfo.status === 'online' ? 'ACTIVE' : 'IDLE',
+            status: vehicleInfo.status,
             money: 0,
             mode: 'ECO',
             location: vehicleInfo.location ? [vehicleInfo.location.lat, vehicleInfo.location.lng] : [31.2304, 121.4737],
             path: [],
-            speed: 0,
+            speed: vehicleInfo.speed || 0,
             gear: 'P',
-            steering: 0
+            steering: 0,
+            // Extended properties required by ExtendedVehicle
+            connectionState: vehicleInfo.is_connected ? 'connected' : 'disconnected',
+            latency_ms: 0,
+            battery_level: vehicleInfo.battery_level || 100,
+            emergency_level: 0,
+            priority_score: 50,
+            telemetry: {
+              cpu_usage: 0,
+              gpu_usage: 0,
+              memory_usage: 0,
+              network_quality: 'good',
+              signal_strength: 80
+            },
+            sensors: {
+              cameras_online: 5,
+              cameras_total: 5,
+              lidar_online: true,
+              gps_fix: true
+            }
           })
         }
       })
@@ -146,8 +231,11 @@ export function useRemoteControl() {
 
   // 加载调度队列
   async function loadSchedulingQueue() {
+    if (!apiService) return
+
     try {
-      schedulingQueue.value = await apiService.getSchedulingQueue()
+      const queue = await apiService.getSchedulingQueue()
+      schedulingQueue.value = queue as unknown as SchedulingQueue
     } catch (error) {
       systemStore.addLog(`Failed to load scheduling queue: ${error}`, 'error')
     }
@@ -190,6 +278,7 @@ export function useRemoteControl() {
 
       connection.onTelemetry((data) => {
         updateVehicleFromStatus({
+          event: 'vehicle_status',
           vehicle_id: vehicleId,
           timestamp: data.timestamp,
           speed: data.speed || 0,
@@ -240,7 +329,7 @@ export function useRemoteControl() {
     const activeConnection = webrtcManager.getActiveConnection()
     if (activeConnection && activeConnection.isConnected) {
       activeConnection.sendControl(command)
-    } else {
+    } else if (webSocketService) {
       // 回退到 WebSocket
       const currentVehicle = fleetStore.currentVehicle
       if (currentVehicle) {
@@ -261,11 +350,9 @@ export function useRemoteControl() {
   }
 
   // 更新调度配置
-  async function updateSchedulingConfig(config: {
-    algorithm?: string
-    weights?: Record<string, number>
-    enabled?: boolean
-  }) {
+  async function updateSchedulingConfig(config: Partial<SchedulingConfig>) {
+    if (!apiService) return
+
     try {
       await apiService.updateSchedulingConfig(config)
       if (config.enabled !== undefined) {
@@ -295,7 +382,9 @@ export function useRemoteControl() {
 
   // 清理
   function cleanup() {
-    webSocketService.disconnect()
+    if (webSocketService) {
+      webSocketService.disconnect()
+    }
     webrtcManager.disconnectAll()
     webrtcConnections.clear()
     isConnected.value = false
@@ -303,17 +392,13 @@ export function useRemoteControl() {
   }
 
   // 监听当前车辆变化
-  watch(() => fleetStore.currentVehicleIndex, async (newIndex) => {
-    const vehicle = fleetStore.vehicles[newIndex]
-    if (vehicle && !webrtcConnections.has(vehicle.id)) {
-      // 可选: 自动连接新选中的车辆
-      // await connectToVehicle(vehicle.id)
-    }
+  watch(() => fleetStore.currentVehicleIndex, async () => {
+    // 可选: 自动连接新选中的车辆
   })
 
   // 生命周期
   onMounted(() => {
-    initialize()
+    // 不自动初始化，需要手动调用 initialize()
   })
 
   onUnmounted(() => {

@@ -15,7 +15,7 @@ std::atomic<bool> g_running{true};
 
 // 信号处理
 void signalHandler(int signum) {
-    LOG_INFO("Received signal " + std::to_string(signum) + ", shutting down...");
+    FSM_LOG_INFO("Received signal " + std::to_string(signum) + ", shutting down...");
     g_running = false;
 }
 
@@ -54,13 +54,12 @@ int main(int argc, char* argv[]) {
     }
 
     // 初始化日志
-    fsm::Logger::getInstance().setLevel(fsm::LogLevel::DEBUG);
-    fsm::Logger::getInstance().setPrefix("[FSM-Operator]");
+    // Logger initialization
 
-    LOG_INFO("========================================");
-    LOG_INFO("  FSM-Pilot Operator Client v1.1.0");
-    LOG_INFO("  远程驾驶操作端");
-    LOG_INFO("========================================");
+    FSM_LOG_INFO("========================================");
+    FSM_LOG_INFO("  FSM-Pilot Operator Client v1.1.0");
+    FSM_LOG_INFO("  远程驾驶操作端");
+    FSM_LOG_INFO("========================================");
 
     // 注册信号处理
     signal(SIGINT, signalHandler);
@@ -71,7 +70,7 @@ int main(int argc, char* argv[]) {
 
     // 初始化
     if (!client.initialize()) {
-        LOG_ERROR("Failed to initialize operator client");
+        FSM_LOG_ERROR("Failed to initialize operator client");
         return 1;
     }
 
@@ -82,28 +81,28 @@ int main(int argc, char* argv[]) {
 
     client.setTelemetryCallback([](const fsm::operator_client::TelemetryData& data) {
         // 显示遥测数据
-        LOG_DEBUG("Telemetry - Speed: " + std::to_string(data.speed) +
+        FSM_LOG_DEBUG("Telemetry - Speed: " + std::to_string(data.speed) +
                  " km/h, Gear: " + std::to_string(data.gear));
     });
 
     // 启动
     client.start();
 
-    LOG_INFO("========================================");
-    LOG_INFO("  Operator client started");
-    LOG_INFO("  Press Ctrl+C to exit");
-    LOG_INFO("========================================");
+    FSM_LOG_INFO("========================================");
+    FSM_LOG_INFO("  Operator client started");
+    FSM_LOG_INFO("  Press Ctrl+C to exit");
+    FSM_LOG_INFO("========================================");
 
     // 如果指定了车辆，自动连接
     if (!vehicle_id.empty()) {
-        LOG_INFO("Connecting to vehicle: " + vehicle_id);
+        FSM_LOG_INFO("Connecting to vehicle: " + vehicle_id);
         if (client.connect(vehicle_id)) {
-            LOG_INFO("Connected to vehicle successfully");
+            FSM_LOG_INFO("Connected to vehicle successfully");
         } else {
-            LOG_ERROR("Failed to connect to vehicle");
+            FSM_LOG_ERROR("Failed to connect to vehicle");
         }
     } else {
-        LOG_INFO("No vehicle specified. Use -v option to connect.");
+        FSM_LOG_INFO("No vehicle specified. Use -v option to connect.");
     }
 
     // 主循环
@@ -118,9 +117,9 @@ int main(int argc, char* argv[]) {
     }
 
     // 关闭
-    LOG_INFO("Shutting down...");
+    FSM_LOG_INFO("Shutting down...");
     client.stop();
 
-    LOG_INFO("Operator client shutdown complete");
+    FSM_LOG_INFO("Operator client shutdown complete");
     return 0;
 }

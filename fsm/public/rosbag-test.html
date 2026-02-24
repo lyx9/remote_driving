@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RosBag WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.disconnected {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .status.connecting {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+        .status.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button.primary {
+            background: #1976d2;
+            color: white;
+        }
+        button.secondary {
+            background: #757575;
+            color: white;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        #log {
+            background: #263238;
+            color: #aed581;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin: 5px 0;
+        }
+        .log-entry.error {
+            color: #ef5350;
+        }
+        .log-entry.success {
+            color: #66bb6a;
+        }
+        .log-entry.info {
+            color: #42a5f5;
+        }
+        #bagList {
+            margin-top: 20px;
+        }
+        .bag-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f5f5f5;
+            border-radius: 5px;
+            border-left: 4px solid #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 RosBag WebSocket Connection Test</h1>
+
+        <div id="status" class="status disconnected">
+            Status: Disconnected
+        </div>
+
+        <div>
+            <button class="primary" onclick="connect()">Connect</button>
+            <button class="secondary" onclick="disconnect()">Disconnect</button>
+            <button class="primary" onclick="listBags()" id="listBagsBtn" disabled>List Bags</button>
+            <button class="secondary" onclick="clearLog()">Clear Log</button>
+        </div>
+
+        <div id="bagList"></div>
+
+        <div id="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        const serverUrl = 'ws://localhost:8765';
+
+        function updateStatus(state, text) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = `status ${state}`;
+            statusEl.textContent = `Status: ${text}`;
+
+            const listBagsBtn = document.getElementById('listBagsBtn');
+            listBagsBtn.disabled = state !== 'connected';
+        }
+
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Already connected', 'info');
+                return;
+            }
+
+            log(`Connecting to ${serverUrl}...`, 'info');
+            updateStatus('connecting', 'Connecting...');
+
+            try {
+                ws = new WebSocket(serverUrl);
+
+                ws.onopen = () => {
+                    log('✓ Connected successfully!', 'success');
+                    updateStatus('connected', 'Connected');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`← Received: ${data.type}`, 'info');
+
+                        if (data.type === 'bag_list') {
+                            displayBags(data.bags);
+                        } else if (data.type === 'connection_state') {
+                            log(`Connection state: ${data.state}`, 'success');
+                        } else {
+                            log(`Message: ${JSON.stringify(data)}`, 'info');
+                        }
+                    } catch (e) {
+                        log(`Error parsing message: ${e.message}`, 'error');
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    log(`✗ WebSocket error: ${error}`, 'error');
+                    updateStatus('disconnected', 'Error');
+                };
+
+                ws.onclose = () => {
+                    log('Connection closed', 'info');
+                    updateStatus('disconnected', 'Disconnected');
+                };
+            } catch (e) {
+                log(`✗ Connection failed: ${e.message}`, 'error');
+                updateStatus('disconnected', 'Error');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+                log('Disconnected', 'info');
+            }
+        }
+
+        function listBags() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('✗ Not connected', 'error');
+                return;
+            }
+
+            const message = { type: 'list_bags' };
+            log(`→ Sending: ${JSON.stringify(message)}`, 'info');
+            ws.send(JSON.stringify(message));
+        }
+
+        function displayBags(bags) {
+            const bagListEl = document.getElementById('bagList');
+
+            if (!bags || bags.length === 0) {
+                bagListEl.innerHTML = '<p>No RosBag files found</p>';
+                log('No bags found', 'info');
+                return;
+            }
+
+            log(`Found ${bags.length} bag(s)`, 'success');
+
+            let html = '<h3>Available RosBag Files:</h3>';
+            bags.forEach(bag => {
+                const sizeMB = (bag.size / 1024 / 1024).toFixed(2);
+                html += `
+                    <div class="bag-item">
+                        <strong>${bag.name}</strong><br>
+                        Size: ${sizeMB} MB<br>
+                        Path: ${bag.path}
+                    </div>
+                `;
+            });
+
+            bagListEl.innerHTML = html;
+        }
+
+        // Auto-connect on load
+        window.onload = () => {
+            log('Page loaded. Click "Connect" to start.', 'info');
+        };
+    </script>
+</body>
+</html>

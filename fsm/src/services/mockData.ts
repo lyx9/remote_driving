@@ -1,6 +1,14 @@
 /**
- * FSM-Pilot Mock 数据服务
- * 用于演示模式，连接到 Mock 服务器获取模拟数据
+ * FSM-Pilot V2.0 - Remote Driving System
+ *
+ * @project     FSM-Pilot Remote Driving Platform
+ * @author      Li Yixiang
+ * @institution City University of Hong Kong
+ * @copyright   2025 City University of Hong Kong. All rights reserved.
+ * @license     Proprietary
+ *
+ * @module      Mock Data Service
+ * @description Mock数据服务，用于演示模式，连接到Mock服务器获取模拟数据
  */
 
 import { ref, onMounted, onUnmounted } from 'vue'

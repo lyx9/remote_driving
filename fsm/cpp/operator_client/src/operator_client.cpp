@@ -24,14 +24,14 @@ OperatorClient::~OperatorClient() {
 }
 
 bool OperatorClient::initialize() {
-    LOG_INFO("[Operator] Initializing operator client...");
+    FSM_LOG_INFO("[Operator] Initializing operator client...");
 
     // 初始化方向盘控制器
     wheel_controller_ = std::make_unique<WheelController>();
     if (!wheel_controller_->open()) {
-        LOG_WARNING("[Operator] No steering wheel detected, using keyboard mode");
+        FSM_LOG_WARN("[Operator] No steering wheel detected, using keyboard mode");
     } else {
-        LOG_INFO("[Operator] Steering wheel connected: " + wheel_controller_->getDeviceName());
+        FSM_LOG_INFO("[Operator] Steering wheel connected: " + wheel_controller_->getDeviceName());
 
         // 设置力反馈
         wheel_controller_->setForceFeedback(config_.force_feedback_strength, 0);
@@ -40,7 +40,7 @@ bool OperatorClient::initialize() {
     // 初始化 WebRTC 连接 (将在连接时创建)
     webrtc_connected_ = false;
 
-    LOG_INFO("[Operator] Operator client initialized");
+    FSM_LOG_INFO("[Operator] Operator client initialized");
     return true;
 }
 
@@ -54,7 +54,7 @@ void OperatorClient::start() {
         inputLoop();
     });
 
-    LOG_INFO("[Operator] Input processing started");
+    FSM_LOG_INFO("[Operator] Input processing started");
 }
 
 void OperatorClient::stop() {
@@ -66,11 +66,11 @@ void OperatorClient::stop() {
 
     disconnect();
 
-    LOG_INFO("[Operator] Operator client stopped");
+    FSM_LOG_INFO("[Operator] Operator client stopped");
 }
 
 bool OperatorClient::connect(const std::string& vehicle_id) {
-    LOG_INFO("[Operator] Connecting to vehicle: " + vehicle_id);
+    FSM_LOG_INFO("[Operator] Connecting to vehicle: " + vehicle_id);
     current_vehicle_id_ = vehicle_id;
 
     // 创建 WebRTC 连接
@@ -83,7 +83,7 @@ bool OperatorClient::connect(const std::string& vehicle_id) {
 void OperatorClient::disconnect() {
     webrtc_connected_ = false;
     current_vehicle_id_.clear();
-    LOG_INFO("[Operator] Disconnected from vehicle");
+    FSM_LOG_INFO("[Operator] Disconnected from vehicle");
 }
 
 void OperatorClient::inputLoop() {
@@ -134,27 +134,27 @@ void OperatorClient::processWheelInput() {
     cmd.emergency = false;
 
     // 处理按钮
-    if (input.emergency_button) {
+    if (input.button_emergency) {
         cmd.emergency = true;
-        LOG_WARNING("[Operator] EMERGENCY STOP ACTIVATED!");
+        FSM_LOG_WARN("[Operator] EMERGENCY STOP ACTIVATED!");
     }
 
     // 档位切换
-    if (input.gear_up_button && !last_input_.gear_up_button) {
+    if (input.button_gear_up && !last_input_.button_gear_up) {
         shiftGearUp();
     }
-    if (input.gear_down_button && !last_input_.gear_down_button) {
+    if (input.button_gear_down && !last_input_.button_gear_down) {
         shiftGearDown();
     }
 
     // 转向灯
-    if (input.left_turn_button && !last_input_.left_turn_button) {
+    if (input.button_left_signal && !last_input_.button_left_signal) {
         turn_signal_ = (turn_signal_ == 1) ? 0 : 1;
-        LOG_INFO("[Operator] Left turn signal: " + std::string(turn_signal_ == 1 ? "ON" : "OFF"));
+        FSM_LOG_INFO("[Operator] Left turn signal: " + std::string(turn_signal_ == 1 ? "ON" : "OFF"));
     }
-    if (input.right_turn_button && !last_input_.right_turn_button) {
+    if (input.button_right_signal && !last_input_.button_right_signal) {
         turn_signal_ = (turn_signal_ == 2) ? 0 : 2;
-        LOG_INFO("[Operator] Right turn signal: " + std::string(turn_signal_ == 2 ? "ON" : "OFF"));
+        FSM_LOG_INFO("[Operator] Right turn signal: " + std::string(turn_signal_ == 2 ? "ON" : "OFF"));
     }
 
     last_input_ = input;
@@ -197,14 +197,14 @@ float OperatorClient::applyCurve(float value, const std::string& curve) {
 void OperatorClient::shiftGearUp() {
     if (current_gear_ < 3) {
         current_gear_++;
-        LOG_INFO("[Operator] Gear: " + getGearName(current_gear_));
+        FSM_LOG_INFO("[Operator] Gear: " + getGearName(current_gear_));
     }
 }
 
 void OperatorClient::shiftGearDown() {
     if (current_gear_ > 0) {
         current_gear_--;
-        LOG_INFO("[Operator] Gear: " + getGearName(current_gear_));
+        FSM_LOG_INFO("[Operator] Gear: " + getGearName(current_gear_));
     }
 }
 
@@ -240,7 +240,7 @@ void OperatorClient::triggerEmergencyStop() {
     cmd.emergency = true;
 
     sendControlCommand(cmd);
-    LOG_WARNING("[Operator] Emergency stop triggered");
+    FSM_LOG_WARN("[Operator] Emergency stop triggered");
 
     // 力反馈震动
     if (wheel_controller_) {

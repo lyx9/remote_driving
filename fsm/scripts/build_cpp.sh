@@ -133,10 +133,23 @@ build() {
 
     # 运行 CMake
     echo "  运行 CMake..."
+
+    # 临时设置 PATH，确保使用系统的 protoc
+    export PATH="/usr/bin:/usr/local/bin:/bin:$(echo "$PATH" | tr ':' '\n' | grep -v -E "(anaconda|miniconda|conda)" | tr '\n' ':' | sed 's/:$//')"
+    export Protobuf_PROTOC_EXECUTABLE=/usr/bin/protoc
+    export PROTOBUF_PROTOC_EXECUTABLE=/usr/bin/protoc
+
+    # 清除可能的 Anaconda 包含路径
+    unset CPLUS_INCLUDE_PATH
+    unset C_INCLUDE_PATH
+    unset LIBRARY_PATH
+
     cmake .. \
         -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
         -DCMAKE_PREFIX_PATH="/opt/ros/humble;/usr;/usr/local" \
+        -DCMAKE_IGNORE_PATH="/opt/anaconda3;$HOME/anaconda3;$HOME/miniconda3" \
         -DProtobuf_DIR="/usr/lib/x86_64-linux-gnu/cmake/protobuf" \
+        -DProtobuf_PROTOC_EXECUTABLE="/usr/bin/protoc" \
         -DUSE_GRPC=OFF \
         2>&1 | tee cmake_output.log
 

@@ -1,3 +1,13 @@
+/**
+ * FSM-Pilot V2.0 - Remote Driving System
+ *
+ * @project     FSM-Pilot Remote Driving Platform
+ * @author      Li Yixiang
+ * @institution City University of Hong Kong
+ * @copyright   2025 City University of Hong Kong. All rights reserved.
+ * @license     Proprietary
+ */
+
 // 车辆类型定义
 export interface Vehicle {
   id: string

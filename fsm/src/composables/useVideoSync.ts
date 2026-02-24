@@ -1,3 +1,16 @@
+/**
+ * FSM-Pilot V2.0 - Remote Driving System
+ *
+ * @project     FSM-Pilot Remote Driving Platform
+ * @author      Li Yixiang
+ * @institution City University of Hong Kong
+ * @copyright   2025 City University of Hong Kong. All rights reserved.
+ * @license     Proprietary
+ *
+ * @module      Video Sync Composable
+ * @description 多路视频同步控制模块
+ */
+
 import { onMounted, onUnmounted } from 'vue'
 import { useCameraStore } from '@/stores/camera'
 import { useSystemStore } from '@/stores/system'
@@ -71,7 +84,7 @@ export function useVideoSync() {
 
   onMounted(() => {
     setTimeout(() => {
-      cleanupFn = initSyncListeners()
+      cleanupFn = initSyncListeners() || null
     }, 1000)
   })
 

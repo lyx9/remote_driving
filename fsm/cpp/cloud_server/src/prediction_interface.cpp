@@ -20,9 +20,9 @@ PredictionInterface::PredictionInterface(const config::CloudConfigManager& confi
     model_endpoint_ = pred_config.model_endpoint;
 
     if (enabled_) {
-        LOG_INFO("[Prediction] Interface enabled, endpoint: " + model_endpoint_);
+        FSM_LOG_INFO("[Prediction] Interface enabled, endpoint: " + model_endpoint_);
     } else {
-        LOG_INFO("[Prediction] Interface disabled");
+        FSM_LOG_INFO("[Prediction] Interface disabled");
     }
 }
 
@@ -32,7 +32,7 @@ bool PredictionInterface::isEnabled() const {
 
 void PredictionInterface::setEnabled(bool enabled) {
     enabled_ = enabled;
-    LOG_INFO("[Prediction] " + std::string(enabled ? "Enabled" : "Disabled"));
+    FSM_LOG_INFO("[Prediction] " + std::string(enabled ? "Enabled" : "Disabled"));
 }
 
 bool PredictionInterface::isCompensationEnabled() const {
@@ -41,7 +41,7 @@ bool PredictionInterface::isCompensationEnabled() const {
 
 void PredictionInterface::setCompensationEnabled(bool enabled) {
     compensation_enabled_ = enabled;
-    LOG_INFO("[Prediction] Compensation " + std::string(enabled ? "Enabled" : "Disabled"));
+    FSM_LOG_INFO("[Prediction] Compensation " + std::string(enabled ? "Enabled" : "Disabled"));
 }
 
 PredictedState PredictionInterface::predict(const VehicleKinematicState& current_state,
@@ -214,7 +214,7 @@ PredictedState PredictionInterface::callExternalModel(
     // 如果配置了外部模型端点，调用它
     // 这里是占位实现，实际需要 HTTP 客户端
 
-    LOG_DEBUG("[Prediction] External model call (not implemented)");
+    FSM_LOG_DEBUG("[Prediction] External model call (not implemented)");
 
     // 回退到内置模型
     return predict(state, latency_ms);

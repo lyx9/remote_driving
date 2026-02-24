@@ -102,7 +102,7 @@ private:
     std::atomic<bool> connected_{false};
 
     // 缓存的状态数据
-    std::mutex state_mutex_;
+    mutable std::mutex state_mutex_;
     VehicleState cached_vehicle_state_;
     SystemState cached_system_state_;
     LatencyInfo cached_latency_info_;

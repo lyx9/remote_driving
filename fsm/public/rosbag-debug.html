@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RosBag Debug Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            background: #4CAF50;
+            color: white;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #log {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #4CAF50;
+            padding-left: 10px;
+        }
+        .log-entry.error {
+            border-left-color: #f44336;
+            color: #f44336;
+        }
+        .log-entry.success {
+            border-left-color: #4CAF50;
+            color: #4CAF50;
+        }
+        .bag-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .bag-item {
+            background: #333;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #2196F3;
+        }
+        .bag-name {
+            font-weight: bold;
+            color: #2196F3;
+            margin-bottom: 5px;
+        }
+        .bag-info {
+            font-size: 12px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 RosBag WebSocket Debug Test</h1>
+
+    <div class="container">
+        <h2>Connection Test</h2>
+        <button onclick="testConnection()">Test Connection</button>
+        <button onclick="listBags()">List Bags</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div class="container">
+        <h2>Available Bags</h2>
+        <div id="bagList"></div>
+    </div>
+
+    <div class="container">
+        <h2>Debug Log</h2>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        const serverUrl = 'ws://localhost:8765';
+
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        async function testConnection() {
+            log('开始连接测试...', 'info');
+
+            try {
+                ws = new WebSocket(serverUrl);
+
+                ws.onopen = () => {
+                    log('✓ WebSocket 连接成功', 'success');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`← 收到消息: ${data.type}`, 'info');
+
+                        if (data.type === 'bag_list') {
+                            log(`  发现 ${data.bags.length} 个 bag 文件`, 'success');
+                            displayBags(data.bags);
+                        } else if (data.type === 'connection_state') {
+                            log(`  连接状态: ${data.state}`, 'success');
+                        }
+                    } catch (e) {
+                        log(`✗ 解析消息失败: ${e.message}`, 'error');
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    log(`✗ WebSocket 错误`, 'error');
+                };
+
+                ws.onclose = () => {
+                    log('连接已关闭', 'info');
+                };
+
+            } catch (e) {
+                log(`✗ 连接失败: ${e.message}`, 'error');
+            }
+        }
+
+        function listBags() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('✗ WebSocket 未连接，请先测试连接', 'error');
+                return;
+            }
+
+            const message = { type: 'list_bags' };
+            log(`→ 发送: ${JSON.stringify(message)}`, 'info');
+            ws.send(JSON.stringify(message));
+        }
+
+        function displayBags(bags) {
+            const bagListEl = document.getElementById('bagList');
+
+            if (!bags || bags.length === 0) {
+                bagListEl.innerHTML = '<p>没有找到 bag 文件</p>';
+                return;
+            }
+
+            let html = '<div class="bag-list">';
+            bags.forEach(bag => {
+                const sizeMB = (bag.size / 1024 / 1024).toFixed(2);
+                html += `
+                    <div class="bag-item">
+                        <div class="bag-name">${bag.name}</div>
+                        <div class="bag-info">
+                            大小: ${sizeMB} MB<br>
+                            格式: ${bag.format || 'ROS2'}<br>
+                            路径: ${bag.path}
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            bagListEl.innerHTML = html;
+        }
+
+        // 页面加载时自动连接
+        window.onload = () => {
+            log('页面已加载，点击 "Test Connection" 开始测试', 'info');
+        };
+    </script>
+</body>
+</html>

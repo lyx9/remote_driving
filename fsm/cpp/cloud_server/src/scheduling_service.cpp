@@ -1,6 +1,7 @@
 #include "fsm/cloud/scheduling_service.hpp"
 #include "fsm/utils.hpp"
 #include <algorithm>
+#include <condition_variable>
 
 namespace fsm {
 namespace cloud {

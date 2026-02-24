@@ -1,3 +1,15 @@
+<!--
+  FSM-Pilot V2.0 - Remote Driving System
+
+  @project     FSM-Pilot Remote Driving Platform
+  @author      Li Yixiang
+  @institution City University of Hong Kong
+  @copyright   2025 City University of Hong Kong. All rights reserved.
+  @license     Proprietary
+
+  @component   AIBar
+  @description AI状态栏组件，显示车辆ID、收益和AI置信度
+-->
 <template>
   <Transition name="slide-down">
     <div v-if="systemStore.ui.showAIBar" class="ai-bar">

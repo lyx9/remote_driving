@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = -DFMT_LOCALE -DFMT_SHARED -DSPDLOG_COMPILED_LIB -DSPDLOG_FMT_EXTERNAL -DSPDLOG_SHARED_LIB -Dfsm_common_EXPORTS
 
-CXX_INCLUDES = -I/home/lyx/fsm/cpp/third_party -I/home/lyx/fsm/cpp/common/include -I/home/lyx/fsm/cpp/vehicle_node/include -I/home/lyx/fsm/cpp/cloud_server/include -I/home/lyx/fsm/cpp/operator_client/include -I/usr/include/opencv4 -I/home/lyx/fsm/cpp/build
+CXX_INCLUDES = -I/home/lyx/fsm/cpp/common/include -I/home/lyx/fsm/cpp/vehicle_node/include -I/home/lyx/fsm/cpp/cloud_server/include -I/home/lyx/fsm/cpp/operator_client/include -I/usr/include/opencv4 -I/home/lyx/fsm/cpp/build -isystem /opt/anaconda3/include
 
 CXX_FLAGS = -O3 -DNDEBUG -fPIC -std=c++17
 

@@ -242,3 +242,267 @@ make -j$(nproc)
 - **operator_client**: 60% 完成（依赖 WebRTC）
 
 **总体评估**: 项目基础设施和配置问题已完全解决，剩余的是功能实现工作。
+
+---
+
+## 2026-01-07 更新：RosBag 回放功能开发
+
+### 新增功能模块
+
+#### 1. RosBag 播放器服务
+**文件**: `/home/lyx/fsm/src/services/rosbagPlayer.ts`
+
+实现了完整的 Autoware.universe RosBag 回放服务，包括：
+- **类型定义**: AutowareVehicleStatus, AutowareKinematicState, AutowareDetectedObjects, PointCloud2, CompressedImage 等
+- **Autoware Topic 常量**: 定义了所有常用的 Autoware topic 路径（定位、感知、点云、相机、车辆状态、控制等）
+- **Mock 数据生成**: 可生成模拟的车辆状态、定位信息和感知目标数据
+- **回放控制**: 播放、暂停、停止、跳转、速率调整、循环模式
+- **消息订阅**: 支持按 topic 订阅消息回调
+
+主要 API：
+```typescript
+const {
+  currentBag,          // 当前加载的 RosBag 信息
+  playbackState,       // 回放状态（播放/暂停/进度/速率）
+  currentVehicleStatus,   // 当前车辆状态
+  currentKinematicState,  // 当前定位信息
+  currentDetectedObjects, // 当前感知目标
+
+  loadMockBag,         // 加载 Mock 数据
+  play, pause, stop,   // 回放控制
+  seek, seekToProgress,// 时间跳转
+  setPlaybackRate,     // 设置速率 (0.1x - 10x)
+  subscribe,           // 订阅 topic
+} = useRosBagPlayer()
+```
+
+#### 2. RosBag 播放器组件
+**文件**: `/home/lyx/fsm/src/components/RosBagPlayer.vue`
+
+功能特性：
+- 显示 RosBag 文件信息（名称、大小、topic 数量、消息数）
+- 车辆状态面板（速度、转向、加速度、航向角速度）
+- 定位信息面板（X/Y/Z 坐标、航向角）
+- 感知目标列表（类型、距离、置信度）
+- 时间轴控制（进度条、时间显示）
+- 播放控制按钮（播放/暂停、单步、循环）
+- 播放速率选择（0.25x - 8x）
+- Topic 侧边栏（显示所有 topic 及其频率）
+
+#### 3. RosBag 可视化组件
+**文件**: `/home/lyx/fsm/src/components/RosBagVisualization.vue`
+
+功能特性：
+- **Bird Eye View**: 鸟瞰图视角
+- **Follow Mode**: 跟随车辆模式
+- **Free Mode**: 自由视角模式
+- 网格显示（10米间隔）
+- 车辆轨迹显示（最近500个点）
+- 感知目标渲染（不同颜色区分类型）
+- 自车渲染（含朝向指示）
+- 鼠标交互（拖拽平移、滚轮缩放）
+- 坐标信息显示
+- 比例尺指示
+- 图例说明
+
+#### 4. RosBag 回放完整视图
+**文件**: `/home/lyx/fsm/src/components/RosBagReplayView.vue`
+
+整合播放器和可视化组件的完整页面：
+- 顶部工具栏（文件打开、导出、设置）
+- 左侧可视化区域
+- 右侧控制面板
+- 统计数据面板（总距离、平均/最大速度、检测目标数）
+- 快捷操作按钮（重置视图、清除轨迹、截图）
+- 文件选择对话框（支持拖放和最近文件）
+- 设置面板（可视化、回放、显示选项）
+
+### Autoware.universe 支持的 Topic
+
+```typescript
+const AUTOWARE_TOPICS = {
+  // 定位
+  KINEMATIC_STATE: '/localization/kinematic_state',
+  POSE: '/localization/pose_twist_fusion_filter/pose',
+
+  // 感知
+  DETECTED_OBJECTS: '/perception/object_recognition/detection/objects',
+  TRACKED_OBJECTS: '/perception/object_recognition/tracking/objects',
+  PREDICTED_OBJECTS: '/perception/object_recognition/prediction/objects',
+
+  // 点云
+  LIDAR_CONCATENATED: '/sensing/lidar/concatenated/pointcloud',
+  LIDAR_LEFT: '/sensing/lidar/left/pointcloud_raw',
+  LIDAR_RIGHT: '/sensing/lidar/right/pointcloud_raw',
+  LIDAR_TOP: '/sensing/lidar/top/pointcloud_raw',
+
+  // 相机
+  CAMERA_FRONT: '/sensing/camera/front/image_raw/compressed',
+  CAMERA_LEFT: '/sensing/camera/left/image_raw/compressed',
+  CAMERA_RIGHT: '/sensing/camera/right/image_raw/compressed',
+  CAMERA_REAR: '/sensing/camera/rear/image_raw/compressed',
+
+  // 车辆状态
+  VEHICLE_STATUS: '/vehicle/status/velocity_status',
+  STEERING_STATUS: '/vehicle/status/steering_status',
+  GEAR_STATUS: '/vehicle/status/gear_status',
+
+  // 控制
+  CONTROL_CMD: '/control/command/control_cmd',
+  TRAJECTORY: '/planning/scenario_planning/trajectory',
+}
+```
+
+### 新增文件列表
+
+1. `/home/lyx/fsm/src/services/rosbagPlayer.ts` - RosBag 播放器服务
+2. `/home/lyx/fsm/src/components/RosBagPlayer.vue` - 播放器控制组件
+3. `/home/lyx/fsm/src/components/RosBagVisualization.vue` - 可视化组件
+4. `/home/lyx/fsm/src/components/RosBagReplayView.vue` - 完整回放视图
+
+### 下一步工作
+
+1. **后端集成**: 实现真实 RosBag 文件解析（mcap/db3 格式）
+2. **点云渲染**: 使用 Three.js 或 WebGL 渲染 PointCloud2 数据
+3. **相机图像**: 解码和显示压缩图像数据
+4. **轨迹规划可视化**: 显示规划轨迹和控制指令
+5. **时间同步**: 多 topic 数据的精确时间同步
+6. **性能优化**: 大型 RosBag 文件的分块加载
+
+### 技术说明
+
+- 使用 Vue 3 Composition API
+- TypeScript 类型安全
+- Canvas 2D 渲染（可视化）
+- 响应式数据更新
+- 支持 Mock 数据用于演示
+
+**当前状态**: RosBag 回放功能的前端框架已完成，支持 Mock 数据演示。等待后端实现真实 RosBag 文件解析。
+
+---
+
+## 2026-01-07 更新：RosBag 专业回放功能（产品级）
+
+### 已完成功能
+
+#### 1. RosBag DB3 文件解析器
+**文件**: `/home/lyx/fsm/src/services/rosbagDb3Parser.ts`
+
+实现了完整的 ROS2 db3 格式解析：
+- 使用 sql.js (SQLite WebAssembly) 解析 db3 文件
+- 使用 @foxglove/cdr 库解析 CDR 序列化消息
+- 支持消息类型：
+  - `sensor_msgs/msg/NavSatFix` - GPS 定位数据
+  - `sensor_msgs/msg/PointCloud2` - 点云数据
+- 消息预加载和缓存机制
+- 二分查找快速定位时间点消息
+
+主要 API：
+```typescript
+const {
+  isLoading,
+  error,
+  bagInfo,
+  loadDb3File,        // 加载 db3 文件
+  preloadAllMessages, // 预加载消息到缓存
+  getCachedMessageAtTime, // 获取缓存中的消息
+  getGpsTrajectory,   // 获取 GPS 轨迹
+  extractPointCloudPoints, // 提取点云点
+} = useRosBagDb3Parser()
+```
+
+#### 2. WebGL 点云渲染器
+**文件**: `/home/lyx/fsm/src/components/PointCloudViewer.vue`
+
+基于 Three.js 的高性能点云渲染：
+- 支持最多 200,000 点实时渲染
+- 四种颜色模式：高度、强度、距离、Ring
+- 视角控制：自由旋转、俯视图、自动旋转
+- 点大小可调
+- FPS 显示
+- 颜色图例
+
+#### 3. GPS 轨迹地图
+**文件**: `/home/lyx/fsm/src/components/GpsTrajectoryMap.vue`
+
+基于 Leaflet 的地图可视化：
+- 三种地图样式：暗色、卫星、街道
+- 车辆位置实时跟踪
+- 轨迹线显示
+- 起点/终点标记
+- 总距离计算
+- 跟随模式
+
+#### 4. RosBag Replay Pro 专业版
+**文件**: `/home/lyx/fsm/src/components/RosBagReplayPro.vue`
+
+整合所有功能的专业回放界面：
+- 四种视图模式：点云、GPS轨迹、鸟瞰图、分屏
+- 时间轴控制（拖动、点击跳转）
+- 回放控制（播放/暂停/停止/单步）
+- 播放速率调节（0.25x - 8x）
+- 循环播放
+- Topics 列表和统计
+- 文件选择对话框（支持拖放）
+- 设置面板
+
+### 新增依赖
+
+```json
+{
+  "sql.js": "^1.x",
+  "@foxglove/cdr": "^2.x",
+  "@foxglove/rosmsg": "^3.x"
+}
+```
+
+### 项目 RosBag 文件
+
+已发现 4 个真实 RosBag 文件：
+```
+/home/lyx/fsm/rosbag/
+├── rosbag2_2025_02_10-15_11_16/  (db3)
+├── rosbag2_2025_02_10-17_59_15/  (db3)
+├── rosbag2_2025_02_23-16_49_58/  (db3, 35.5s, 392 msgs)
+└── rosbag2_2025_02_26-15_21_07/  (db3, 74.8s, 823 msgs, 1.7GB)
+```
+
+Topics 包含：
+- `/fix` - GPS 定位 (sensor_msgs/msg/NavSatFix)
+- `/rslidar_points` - 点云数据 (sensor_msgs/msg/PointCloud2)
+
+### 新增文件列表
+
+1. `/home/lyx/fsm/src/services/rosbagDb3Parser.ts` - DB3 解析器服务
+2. `/home/lyx/fsm/src/components/PointCloudViewer.vue` - WebGL 点云渲染器
+3. `/home/lyx/fsm/src/components/GpsTrajectoryMap.vue` - GPS 轨迹地图
+4. `/home/lyx/fsm/src/components/RosBagReplayPro.vue` - 专业版回放界面
+
+### 使用方法
+
+1. 在应用中引入 `RosBagReplayPro` 组件
+2. 点击 "Open Bag" 按钮
+3. 选择 `.db3` 格式的 RosBag 文件
+4. 等待文件加载完成
+5. 使用时间轴和控制按钮进行回放
+
+### 技术架构
+
+```
+RosBagReplayPro.vue (主界面)
+├── PointCloudViewer.vue (Three.js 点云)
+├── GpsTrajectoryMap.vue (Leaflet 地图)
+├── RosBagVisualization.vue (Canvas 鸟瞰图)
+└── rosbagDb3Parser.ts (数据解析)
+    ├── sql.js (SQLite WASM)
+    └── @foxglove/cdr (消息反序列化)
+```
+
+### 性能优化
+
+1. **消息预加载**: 点云数据预加载到内存缓存
+2. **采样显示**: 点云采样显示（最多 50,000 点）
+3. **二分查找**: 快速定位时间点消息
+4. **浅响应式**: 使用 shallowRef 优化大数据响应性
+
+**当前状态**: 产品级 RosBag 回放功能已完成，支持真实 db3 文件解析和可视化。

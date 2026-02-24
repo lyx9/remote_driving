@@ -10,6 +10,7 @@
 #include <cmath>
 #include <algorithm>
 #include <functional>
+#include <map>
 
 namespace fsm {
 namespace vehicle {

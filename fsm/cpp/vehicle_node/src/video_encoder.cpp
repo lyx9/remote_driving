@@ -1,290 +1,260 @@
 /**
- * FSM-Pilot 视频编码器实现
- * 支持 H.264 硬件加速编码
+ * FSM-Pilot Video Encoder Implementation
+ * 视频编码器实现
  */
 
 #include "fsm/vehicle/video_encoder.hpp"
 #include "fsm/logger.hpp"
+#include <cstring>
+#include <sstream>
+
+// For x264 software encoding
+extern "C" {
+#include <x264.h>
+}
 
 namespace fsm {
 namespace vehicle {
 
-VideoEncoder::VideoEncoder(const config::CameraConfig& config)
-    : config_(config)
-    , initialized_(false)
-    , frame_count_(0)
-    , codec_ctx_(nullptr)
-    , hw_device_ctx_(nullptr)
-{
+// ============================================================================
+// SoftwareEncoder Implementation (x264)
+// ============================================================================
+
+struct SoftwareEncoder::Impl {
+    x264_t* encoder = nullptr;
+    x264_param_t param;
+    x264_picture_t pic_in;
+    x264_picture_t pic_out;
+
+    EncoderConfig config;
+    bool initialized = false;
+    uint64_t frame_count = 0;
+    bool keyframe_requested = false;
+
+    ~Impl() {
+        if (encoder) {
+            x264_encoder_close(encoder);
+            encoder = nullptr;
+        }
+        x264_picture_clean(&pic_in);
+    }
+};
+
+SoftwareEncoder::SoftwareEncoder()
+    : impl_(std::make_unique<Impl>()) {
 }
 
-VideoEncoder::~VideoEncoder() {
+SoftwareEncoder::~SoftwareEncoder() {
     shutdown();
 }
 
-bool VideoEncoder::initialize() {
-    if (initialized_) {
+bool SoftwareEncoder::initialize(const EncoderConfig& config) {
+    if (impl_->initialized) {
+        FSM_LOG_WARN("Encoder already initialized");
         return true;
     }
 
-    LOG_INFO("[Encoder] Initializing encoder for camera: " + config_.id);
+    impl_->config = config;
 
-#ifdef USE_FFMPEG
-    // 注册所有编解码器
-    // avcodec_register_all(); // FFmpeg 4.0+ 不需要
+    // Initialize x264 parameters
+    x264_param_t* param = &impl_->param;
 
-    // 查找 H.264 编码器
-    const AVCodec* codec = nullptr;
-
-    // 优先使用硬件编码器
-    if (config_.encoding == "h264") {
-        // 尝试 NVIDIA NVENC
-        codec = avcodec_find_encoder_by_name("h264_nvenc");
-        if (codec) {
-            LOG_INFO("[Encoder] Using NVIDIA NVENC hardware encoder");
-        }
-
-        // 尝试 VA-API (Intel/AMD)
-        if (!codec) {
-            codec = avcodec_find_encoder_by_name("h264_vaapi");
-            if (codec) {
-                LOG_INFO("[Encoder] Using VA-API hardware encoder");
-            }
-        }
-
-        // 回退到软件编码
-        if (!codec) {
-            codec = avcodec_find_encoder(AV_CODEC_ID_H264);
-            if (codec) {
-                LOG_INFO("[Encoder] Using libx264 software encoder");
-            }
-        }
-    } else if (config_.encoding == "vp8") {
-        codec = avcodec_find_encoder(AV_CODEC_ID_VP8);
-    } else if (config_.encoding == "vp9") {
-        codec = avcodec_find_encoder(AV_CODEC_ID_VP9);
-    }
-
-    if (!codec) {
-        LOG_ERROR("[Encoder] Failed to find encoder for: " + config_.encoding);
+    // Use preset and tune
+    if (x264_param_default_preset(param,
+                                   config.preset.c_str(),
+                                   config.tune.c_str()) < 0) {
+        FSM_LOG_ERROR("Failed to set x264 preset/tune");
         return false;
     }
 
-    // 分配编码器上下文
-    codec_ctx_ = avcodec_alloc_context3(codec);
-    if (!codec_ctx_) {
-        LOG_ERROR("[Encoder] Failed to allocate encoder context");
+    // Configure video parameters
+    param->i_width = config.width;
+    param->i_height = config.height;
+    param->i_fps_num = config.fps;
+    param->i_fps_den = 1;
+    param->i_keyint_max = config.keyframe_interval;
+    param->b_repeat_headers = 1;  // Put SPS/PPS before each keyframe
+    param->b_annexb = 1;           // Use Annex-B format
+
+    // Rate control
+    param->rc.i_rc_method = X264_RC_ABR;
+    param->rc.i_bitrate = config.bitrate_kbps;
+    param->rc.i_vbv_max_bitrate = config.bitrate_kbps * 1.2;
+    param->rc.i_vbv_buffer_size = config.bitrate_kbps;
+
+    // Low latency settings
+    param->i_slice_max_size = 1500; // MTU size
+    param->b_intra_refresh = 1;
+    param->i_bframe = 0; // No B-frames for low latency
+
+    // Threading
+    param->i_threads = 4;
+
+    // Apply profile
+    if (x264_param_apply_profile(param, "baseline") < 0) {
+        FSM_LOG_ERROR("Failed to apply x264 profile");
         return false;
     }
 
-    // 设置编码参数
-    codec_ctx_->width = config_.width;
-    codec_ctx_->height = config_.height;
-    codec_ctx_->time_base = {1, config_.fps};
-    codec_ctx_->framerate = {config_.fps, 1};
-    codec_ctx_->gop_size = config_.fps;  // 1秒一个关键帧
-    codec_ctx_->max_b_frames = 0;        // 禁用 B 帧以降低延迟
-    codec_ctx_->pix_fmt = AV_PIX_FMT_YUV420P;
-    codec_ctx_->bit_rate = config_.bitrate;
-
-    // 低延迟设置
-    codec_ctx_->flags |= AV_CODEC_FLAG_LOW_DELAY;
-    codec_ctx_->flags2 |= AV_CODEC_FLAG2_FAST;
-
-    // 编码器特定选项
-    AVDictionary* opts = nullptr;
-
-    if (strstr(codec->name, "nvenc")) {
-        // NVENC 低延迟设置
-        av_dict_set(&opts, "preset", "ll", 0);       // 低延迟
-        av_dict_set(&opts, "tune", "ull", 0);        // 超低延迟
-        av_dict_set(&opts, "zerolatency", "1", 0);
-        av_dict_set(&opts, "rc", "cbr", 0);          // CBR 模式
-    } else if (strstr(codec->name, "vaapi")) {
-        // VA-API 设置
-        av_dict_set(&opts, "rc_mode", "CBR", 0);
-    } else {
-        // x264 软件编码设置
-        av_dict_set(&opts, "preset", "ultrafast", 0);
-        av_dict_set(&opts, "tune", "zerolatency", 0);
-        av_dict_set(&opts, "profile", "baseline", 0);
-    }
-
-    // 打开编码器
-    int ret = avcodec_open2(codec_ctx_, codec, &opts);
-    av_dict_free(&opts);
-
-    if (ret < 0) {
-        char err_buf[256];
-        av_strerror(ret, err_buf, sizeof(err_buf));
-        LOG_ERROR("[Encoder] Failed to open encoder: " + std::string(err_buf));
-        avcodec_free_context(&codec_ctx_);
+    // Create encoder
+    impl_->encoder = x264_encoder_open(param);
+    if (!impl_->encoder) {
+        FSM_LOG_ERROR("Failed to open x264 encoder");
         return false;
     }
 
-    // 分配帧和包
-    frame_ = av_frame_alloc();
-    frame_->format = codec_ctx_->pix_fmt;
-    frame_->width = codec_ctx_->width;
-    frame_->height = codec_ctx_->height;
-
-    ret = av_frame_get_buffer(frame_, 32);
-    if (ret < 0) {
-        LOG_ERROR("[Encoder] Failed to allocate frame buffer");
+    // Allocate input picture
+    if (x264_picture_alloc(&impl_->pic_in, X264_CSP_I420,
+                           config.width, config.height) < 0) {
+        FSM_LOG_ERROR("Failed to allocate x264 picture");
+        x264_encoder_close(impl_->encoder);
+        impl_->encoder = nullptr;
         return false;
     }
 
-    packet_ = av_packet_alloc();
+    impl_->initialized = true;
+    FSM_LOG_INFO("Software encoder initialized: {}x{}@{}fps",
+                 config.width, config.height, config.fps);
 
-    // 创建颜色转换上下文 (BGR -> YUV420P)
-    sws_ctx_ = sws_getContext(
-        config_.width, config_.height, AV_PIX_FMT_BGR24,
-        config_.width, config_.height, AV_PIX_FMT_YUV420P,
-        SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
-    );
-
-    if (!sws_ctx_) {
-        LOG_ERROR("[Encoder] Failed to create SWS context");
-        return false;
-    }
-
-    initialized_ = true;
-    LOG_INFO("[Encoder] Encoder initialized successfully");
     return true;
-
-#else
-    LOG_ERROR("[Encoder] FFmpeg not available, encoder disabled");
-    return false;
-#endif
 }
 
-void VideoEncoder::shutdown() {
-    if (!initialized_) {
+bool SoftwareEncoder::encode(const cv::Mat& frame, EncodedFrame& output) {
+    if (!impl_->initialized) {
+        FSM_LOG_ERROR("Encoder not initialized");
+        return false;
+    }
+
+    // Convert BGR to YUV420
+    cv::Mat yuv;
+    cv::cvtColor(frame, yuv, cv::COLOR_BGR2YUV_I420);
+
+    // Copy to x264 picture
+    int y_size = impl_->config.width * impl_->config.height;
+    int uv_size = y_size / 4;
+
+    std::memcpy(impl_->pic_in.img.plane[0], yuv.data, y_size);
+    std::memcpy(impl_->pic_in.img.plane[1], yuv.data + y_size, uv_size);
+    std::memcpy(impl_->pic_in.img.plane[2], yuv.data + y_size + uv_size, uv_size);
+
+    impl_->pic_in.i_pts = impl_->frame_count++;
+
+    // Force keyframe if requested
+    if (impl_->keyframe_requested) {
+        impl_->pic_in.i_type = X264_TYPE_IDR;
+        impl_->keyframe_requested = false;
+    } else {
+        impl_->pic_in.i_type = X264_TYPE_AUTO;
+    }
+
+    // Encode
+    x264_nal_t* nals = nullptr;
+    int i_nals = 0;
+    int frame_size = x264_encoder_encode(impl_->encoder, &nals, &i_nals,
+                                         &impl_->pic_in, &impl_->pic_out);
+
+    if (frame_size < 0) {
+        FSM_LOG_ERROR("x264_encoder_encode failed");
+        return false;
+    }
+
+    if (frame_size == 0) {
+        // No output yet (delayed frames)
+        return false;
+    }
+
+    // Copy encoded data
+    output.data.clear();
+    for (int i = 0; i < i_nals; i++) {
+        output.data.insert(output.data.end(),
+                          nals[i].p_payload,
+                          nals[i].p_payload + nals[i].i_payload);
+    }
+
+    output.is_keyframe = (impl_->pic_out.b_keyframe != 0);
+    output.timestamp = impl_->pic_out.i_pts;
+    output.pts = impl_->pic_out.i_pts;
+    output.dts = impl_->pic_out.i_dts;
+
+    return true;
+}
+
+void SoftwareEncoder::requestKeyframe() {
+    impl_->keyframe_requested = true;
+}
+
+std::string SoftwareEncoder::getEncoderInfo() const {
+    std::ostringstream oss;
+    oss << "x264 Software Encoder - "
+        << impl_->config.width << "x" << impl_->config.height
+        << "@" << impl_->config.fps << "fps, "
+        << impl_->config.bitrate_kbps << "kbps";
+    return oss.str();
+}
+
+void SoftwareEncoder::shutdown() {
+    if (!impl_->initialized) {
         return;
     }
 
-#ifdef USE_FFMPEG
-    if (sws_ctx_) {
-        sws_freeContext(sws_ctx_);
-        sws_ctx_ = nullptr;
+    // Flush delayed frames
+    if (impl_->encoder) {
+        while (true) {
+            x264_nal_t* nals = nullptr;
+            int i_nals = 0;
+            int frame_size = x264_encoder_encode(impl_->encoder, &nals, &i_nals,
+                                                 nullptr, &impl_->pic_out);
+            if (frame_size <= 0) {
+                break;
+            }
+        }
     }
 
-    if (packet_) {
-        av_packet_free(&packet_);
-    }
-
-    if (frame_) {
-        av_frame_free(&frame_);
-    }
-
-    if (codec_ctx_) {
-        avcodec_free_context(&codec_ctx_);
-    }
-#endif
-
-    initialized_ = false;
-    LOG_INFO("[Encoder] Encoder shutdown");
+    impl_->initialized = false;
+    FSM_LOG_INFO("Encoder shutdown");
 }
 
-EncodedFrame VideoEncoder::encode(const uint8_t* rgb_data,
-                                   int width,
-                                   int height,
-                                   int64_t timestamp) {
-    EncodedFrame result;
-    result.timestamp = timestamp;
-    result.is_keyframe = false;
+// ============================================================================
+// Factory Functions
+// ============================================================================
 
-    if (!initialized_) {
-        LOG_ERROR("[Encoder] Encoder not initialized");
-        return result;
+std::unique_ptr<VideoEncoder> createEncoder(EncoderType type) {
+    switch (type) {
+        case EncoderType::SOFTWARE_X264:
+            return std::make_unique<SoftwareEncoder>();
+
+        case EncoderType::NVENC:
+            FSM_LOG_WARN("NVENC not implemented, falling back to software encoder");
+            return std::make_unique<SoftwareEncoder>();
+
+        case EncoderType::VAAPI:
+            FSM_LOG_WARN("VAAPI not implemented, falling back to software encoder");
+            return std::make_unique<SoftwareEncoder>();
+
+        case EncoderType::AUTO:
+            // Try hardware encoders first, then fallback
+            if (isNvencAvailable()) {
+                FSM_LOG_INFO("NVENC available but not implemented, using software");
+            }
+            if (isVaapiAvailable()) {
+                FSM_LOG_INFO("VAAPI available but not implemented, using software");
+            }
+            return std::make_unique<SoftwareEncoder>();
+
+        default:
+            return std::make_unique<SoftwareEncoder>();
     }
-
-#ifdef USE_FFMPEG
-    // 确保帧可写
-    int ret = av_frame_make_writable(frame_);
-    if (ret < 0) {
-        LOG_ERROR("[Encoder] Frame not writable");
-        return result;
-    }
-
-    // BGR -> YUV420P 颜色转换
-    const uint8_t* src_data[1] = { rgb_data };
-    int src_linesize[1] = { width * 3 };
-
-    sws_scale(sws_ctx_,
-              src_data, src_linesize,
-              0, height,
-              frame_->data, frame_->linesize);
-
-    // 设置时间戳
-    frame_->pts = frame_count_++;
-
-    // 发送帧到编码器
-    ret = avcodec_send_frame(codec_ctx_, frame_);
-    if (ret < 0) {
-        char err_buf[256];
-        av_strerror(ret, err_buf, sizeof(err_buf));
-        LOG_ERROR("[Encoder] Error sending frame: " + std::string(err_buf));
-        return result;
-    }
-
-    // 接收编码后的数据
-    ret = avcodec_receive_packet(codec_ctx_, packet_);
-    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-        // 需要更多输入或编码结束
-        return result;
-    } else if (ret < 0) {
-        char err_buf[256];
-        av_strerror(ret, err_buf, sizeof(err_buf));
-        LOG_ERROR("[Encoder] Error receiving packet: " + std::string(err_buf));
-        return result;
-    }
-
-    // 复制编码数据
-    result.data.assign(packet_->data, packet_->data + packet_->size);
-    result.is_keyframe = (packet_->flags & AV_PKT_FLAG_KEY) != 0;
-    result.pts = packet_->pts;
-    result.dts = packet_->dts;
-
-    av_packet_unref(packet_);
-
-#endif
-    return result;
 }
 
-void VideoEncoder::setBitrate(int bitrate) {
-#ifdef USE_FFMPEG
-    if (codec_ctx_) {
-        codec_ctx_->bit_rate = bitrate;
-        // 注意: 运行时更改比特率可能需要重新配置编码器
-    }
-#endif
+bool isNvencAvailable() {
+    // TODO: Implement NVENC detection
+    return false;
 }
 
-void VideoEncoder::requestKeyframe() {
-#ifdef USE_FFMPEG
-    if (frame_) {
-        frame_->pict_type = AV_PICTURE_TYPE_I;
-    }
-#endif
+bool isVaapiAvailable() {
+    // TODO: Implement VAAPI detection
+    return false;
 }
 
-EncoderStats VideoEncoder::getStats() const {
-    EncoderStats stats;
-    stats.frames_encoded = frame_count_;
-    stats.bitrate = config_.bitrate;
-    stats.width = config_.width;
-    stats.height = config_.height;
-    stats.fps = config_.fps;
-
-#ifdef USE_FFMPEG
-    if (codec_ctx_) {
-        // 可以添加更多统计信息
-    }
-#endif
-
-    return stats;
-}
-
-}  // namespace vehicle
-}  // namespace fsm
+} // namespace vehicle
+} // namespace fsm

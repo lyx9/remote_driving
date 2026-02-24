@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amap Configuration Test</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #0a0a12;
+      color: #fff;
+    }
+    .test-result {
+      margin: 10px 0;
+      padding: 10px;
+      border: 1px solid #333;
+      border-radius: 4px;
+    }
+    .success { border-color: #10b981; color: #10b981; }
+    .error { border-color: #ef4444; color: #ef4444; }
+    #map {
+      width: 100%;
+      height: 400px;
+      margin-top: 20px;
+      border: 1px solid #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>🗺️ Amap Configuration Test</h1>
+
+  <div id="results"></div>
+
+  <div id="map"></div>
+
+  <script type="module">
+    const results = document.getElementById('results');
+
+    function addResult(message, isSuccess) {
+      const div = document.createElement('div');
+      div.className = `test-result ${isSuccess ? 'success' : 'error'}`;
+      div.textContent = message;
+      results.appendChild(div);
+    }
+
+    // Test 1: Check environment variables
+    const apiKey = import.meta.env.VITE_AMAP_API_KEY;
+    const jsCode = import.meta.env.VITE_AMAP_JS_CODE;
+
+    addResult(`✓ VITE_AMAP_API_KEY: ${apiKey ? apiKey.substring(0, 10) + '...' : 'NOT SET'}`, !!apiKey);
+    addResult(`✓ VITE_AMAP_JS_CODE: ${jsCode ? jsCode.substring(0, 10) + '...' : 'NOT SET'}`, !!jsCode);
+
+    // Test 2: Load Amap
+    if (apiKey && jsCode) {
+      window._AMapSecurityConfig = {
+        securityJsCode: jsCode
+      };
+
+      addResult('✓ Security config set', true);
+
+      // Load Amap script
+      import('@amap/amap-jsapi-loader').then(AMapLoader => {
+        addResult('✓ AMapLoader imported', true);
+
+        return AMapLoader.default.load({
+          key: apiKey,
+          version: '2.0',
+          plugins: ['AMap.Scale', 'AMap.ToolBar']
+        });
+      }).then(AMap => {
+        addResult('✓ Amap loaded successfully', true);
+
+        // Create map
+        const map = new AMap.Map('map', {
+          zoom: 11,
+          center: [114.1694, 22.3193], // Hong Kong
+          mapStyle: 'amap://styles/dark',
+          viewMode: '2D'
+        });
+
+        addResult('✓ Map created successfully - Hong Kong displayed', true);
+
+        // Add a marker
+        const marker = new AMap.CircleMarker({
+          center: [114.1694, 22.3193],
+          radius: 10,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+          fillColor: '#ff5722',
+          fillOpacity: 1
+        });
+
+        map.add(marker);
+        addResult('✓ Marker added successfully', true);
+
+      }).catch(error => {
+        addResult(`✗ Amap loading failed: ${error.message}`, false);
+        console.error('Amap error:', error);
+      });
+    } else {
+      addResult('✗ Cannot test Amap - environment variables not set', false);
+    }
+  </script>
+</body>
+</html>

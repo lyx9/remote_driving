@@ -1,24 +1,48 @@
 /**
- * FSM-Pilot 方向盘输入 Composable
- * 支持罗技 G29/G920 等游戏方向盘
+ * FSM-Pilot V2.0 - Remote Driving System
+ *
+ * @project     FSM-Pilot Remote Driving Platform
+ * @author      Li Yixiang
+ * @institution City University of Hong Kong
+ * @copyright   2025 City University of Hong Kong. All rights reserved.
+ * @license     Proprietary
+ *
+ * @module      Steering Wheel Composable
+ * @description 方向盘输入模块，支持罗技G29/G920/G923、Thrustmaster、Fanatec等游戏方向盘
+ *              支持力反馈(Force Feedback)
  */
 
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useSystemStore } from '@/stores/system'
+
+// ======================== 类型定义 ========================
 
 export interface WheelInput {
   steering: number      // -1.0 to 1.0
   throttle: number      // 0.0 to 1.0
   brake: number         // 0.0 to 1.0
   clutch: number        // 0.0 to 1.0
+  handbrake: number     // 0.0 to 1.0
   buttons: {
     emergency: boolean
     horn: boolean
     leftSignal: boolean
     rightSignal: boolean
+    hazard: boolean
     gearUp: boolean
     gearDown: boolean
+    neutral: boolean
+    reverse: boolean
   }
+}
+
+export interface WheelInfo {
+  id: string
+  name: string
+  brand: 'logitech' | 'thrustmaster' | 'fanatec' | 'unknown'
+  axes: number
+  buttons: number
+  hasForceFeedback: boolean
 }
 
 export interface WheelConfig {
@@ -61,13 +85,17 @@ export function useSteeringWheel(config: Partial<WheelConfig> = {}) {
     throttle: 0,
     brake: 0,
     clutch: 0,
+    handbrake: 0,
     buttons: {
       emergency: false,
       horn: false,
       leftSignal: false,
       rightSignal: false,
+      hazard: false,
       gearUp: false,
-      gearDown: false
+      gearDown: false,
+      neutral: false,
+      reverse: false
     }
   })
 
@@ -176,8 +204,11 @@ export function useSteeringWheel(config: Partial<WheelConfig> = {}) {
       horn: gp.buttons[LOGITECH_BUTTONS.SQUARE]?.pressed || false,
       leftSignal: gp.buttons[LOGITECH_BUTTONS.L1]?.pressed || false,
       rightSignal: gp.buttons[LOGITECH_BUTTONS.R1]?.pressed || false,
+      hazard: gp.buttons[LOGITECH_BUTTONS.CIRCLE]?.pressed || false,
       gearUp: gp.buttons[LOGITECH_BUTTONS.PADDLE_RIGHT]?.pressed || false,
-      gearDown: gp.buttons[LOGITECH_BUTTONS.PADDLE_LEFT]?.pressed || false
+      gearDown: gp.buttons[LOGITECH_BUTTONS.PADDLE_LEFT]?.pressed || false,
+      neutral: gp.buttons[LOGITECH_BUTTONS.TRIANGLE]?.pressed || false,
+      reverse: gp.buttons[8]?.pressed || false  // 通常是 SELECT/SHARE 按钮
     }
 
     // 更新状态
@@ -186,6 +217,7 @@ export function useSteeringWheel(config: Partial<WheelConfig> = {}) {
       throttle,
       brake,
       clutch,
+      handbrake: 0,  // 部分方向盘有独立手刹轴
       buttons
     }
 

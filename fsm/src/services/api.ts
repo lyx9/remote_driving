@@ -1,6 +1,14 @@
 /**
- * FSM-Pilot REST API 服务
- * 用于与云端服务器进行HTTP通信
+ * FSM-Pilot V2.0 - Remote Driving System
+ *
+ * @project     FSM-Pilot Remote Driving Platform
+ * @author      Li Yixiang
+ * @institution City University of Hong Kong
+ * @copyright   2025 City University of Hong Kong. All rights reserved.
+ * @license     Proprietary
+ *
+ * @module      REST API Service
+ * @description REST API服务，用于与云端服务器进行HTTP通信
  */
 
 export interface ApiConfig {

@@ -1,12 +1,67 @@
 /**
- * FSM-Pilot WebRTC 服务
- * 用于与车端建立P2P视频/数据连接
+ * FSM-Pilot V2.0 - Remote Driving System
+ *
+ * @project     FSM-Pilot Remote Driving Platform
+ * @author      Li Yixiang
+ * @institution City University of Hong Kong
+ * @copyright   2025 City University of Hong Kong. All rights reserved.
+ * @license     Proprietary
+ *
+ * @module      WebRTC Service
+ * @description WebRTC服务，用于与车端建立P2P视频/数据连接
+ *              支持阿里云TURN服务器和多摄像头传输
  */
+
+// ======================== 阿里云 TURN 配置 ========================
+
+/**
+ * 阿里云 TURN 服务器配置
+ * 实际部署时需要从后端获取临时凭证
+ */
+export const ALIYUN_ICE_SERVERS: RTCIceServer[] = [
+  // 公共 STUN 服务器
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  // 阿里云 TURN (需配置)
+  {
+    urls: [
+      'turn:turn.fsm-pilot.aliyuncs.com:3478?transport=udp',
+      'turn:turn.fsm-pilot.aliyuncs.com:3478?transport=tcp',
+      'turns:turn.fsm-pilot.aliyuncs.com:443?transport=tcp'
+    ],
+    username: 'fsm-turn-user',
+    credential: 'temp-credential'
+  }
+]
+
+// ======================== 摄像头类型定义 ========================
+
+export interface CameraConfig {
+  id: string
+  name: string
+  type: 'front' | 'rear' | 'left' | 'right' | 'interior' | 'surround'
+  resolution: { width: number; height: number }
+  frameRate: number
+  bitrate: number
+  enabled: boolean
+}
+
+export const DEFAULT_CAMERAS: CameraConfig[] = [
+  { id: 'front-main', name: '前视主摄', type: 'front', resolution: { width: 1920, height: 1080 }, frameRate: 30, bitrate: 4000000, enabled: true },
+  { id: 'front-wide', name: '前视广角', type: 'front', resolution: { width: 1280, height: 720 }, frameRate: 30, bitrate: 2000000, enabled: true },
+  { id: 'rear-main', name: '后视摄像', type: 'rear', resolution: { width: 1280, height: 720 }, frameRate: 25, bitrate: 1500000, enabled: true },
+  { id: 'left-mirror', name: '左后视镜', type: 'left', resolution: { width: 640, height: 480 }, frameRate: 25, bitrate: 800000, enabled: false },
+  { id: 'right-mirror', name: '右后视镜', type: 'right', resolution: { width: 640, height: 480 }, frameRate: 25, bitrate: 800000, enabled: false },
+  { id: 'surround-360', name: '360环视', type: 'surround', resolution: { width: 1920, height: 1080 }, frameRate: 20, bitrate: 3000000, enabled: false }
+]
+
+// ======================== 基础类型定义 ========================
 
 export interface WebRTCConfig {
   iceServers: RTCIceServer[]
   signalingUrl: string
   vehicleId: string
+  cameras?: CameraConfig[]
 }
 
 export interface VideoStream {
@@ -465,3 +520,328 @@ class WebRTCManager {
 }
 
 export const webrtcManager = new WebRTCManager()
+
+// ======================== Vue 组合式 API 封装 ========================
+
+import { ref, reactive, computed, onUnmounted } from 'vue'
+
+export interface MultiCameraState {
+  streams: Map<string, MediaStream>
+  stats: Map<string, StreamStats>
+}
+
+export interface StreamStats {
+  bytesReceived: number
+  packetsReceived: number
+  packetsLost: number
+  frameRate: number
+  resolution: { width: number; height: number }
+  bitrate: number
+}
+
+/**
+ * 多摄像头 WebRTC 组合式 API
+ */
+export function useMultiCameraWebRTC(vehicleId: string, signalingUrl?: string) {
+  // 状态
+  const isConnected = ref(false)
+  const isConnecting = ref(false)
+  const error = ref<string | null>(null)
+  const latency = ref(0)
+  const bandwidth = ref(0)
+
+  // 摄像头配置
+  const cameras = ref<CameraConfig[]>(DEFAULT_CAMERAS.map(c => ({ ...c })))
+
+  // 视频流
+  const streams = reactive<Map<string, MediaStream>>(new Map())
+  const streamStats = reactive<Map<string, StreamStats>>(new Map())
+
+  // WebRTC 服务实例
+  let webrtcService: WebRTCService | null = null
+  let statsInterval: number | null = null
+
+  /**
+   * 连接到车辆
+   */
+  const connect = async (): Promise<boolean> => {
+    if (isConnected.value || isConnecting.value) return false
+
+    isConnecting.value = true
+    error.value = null
+
+    try {
+      const config: WebRTCConfig = {
+        iceServers: ALIYUN_ICE_SERVERS,
+        signalingUrl: signalingUrl || `wss://fsm-pilot.example.com/signaling/${vehicleId}`,
+        vehicleId,
+        cameras: cameras.value.filter(c => c.enabled)
+      }
+
+      webrtcService = webrtcManager.createConnection(config)
+
+      // 注册回调
+      webrtcService.onConnectionState((state) => {
+        isConnected.value = state === 'connected'
+        isConnecting.value = state === 'connecting'
+        if (state === 'failed') {
+          error.value = '连接失败'
+        }
+      })
+
+      webrtcService.onVideoStream(({ cameraId, stream }) => {
+        streams.set(cameraId, stream)
+        initStreamStats(cameraId)
+      })
+
+      webrtcService.onLatencyUpdate((info) => {
+        latency.value = info.rtt_ms
+      })
+
+      await webrtcService.connect()
+
+      // 启动统计收集
+      startStatsCollection()
+
+      return true
+    } catch (e) {
+      error.value = `连接错误: ${e}`
+      isConnecting.value = false
+      return false
+    }
+  }
+
+  /**
+   * 断开连接
+   */
+  const disconnect = () => {
+    stopStatsCollection()
+    if (webrtcService) {
+      webrtcService.disconnect()
+      webrtcService = null
+    }
+    streams.clear()
+    streamStats.clear()
+    isConnected.value = false
+    isConnecting.value = false
+  }
+
+  /**
+   * 切换摄像头
+   */
+  const toggleCamera = (cameraId: string) => {
+    const camera = cameras.value.find(c => c.id === cameraId)
+    if (camera) {
+      camera.enabled = !camera.enabled
+      // TODO: 发送信令通知车端
+    }
+  }
+
+  /**
+   * 设置摄像头质量
+   */
+  const setCameraQuality = (cameraId: string, quality: 'low' | 'medium' | 'high') => {
+    const camera = cameras.value.find(c => c.id === cameraId)
+    if (!camera) return
+
+    const presets = {
+      low: { width: 640, height: 360, frameRate: 15, bitrate: 500000 },
+      medium: { width: 1280, height: 720, frameRate: 25, bitrate: 1500000 },
+      high: { width: 1920, height: 1080, frameRate: 30, bitrate: 4000000 }
+    }
+
+    const preset = presets[quality]
+    camera.resolution = { width: preset.width, height: preset.height }
+    camera.frameRate = preset.frameRate
+    camera.bitrate = preset.bitrate
+  }
+
+  /**
+   * 获取摄像头流
+   */
+  const getStream = (cameraId: string): MediaStream | undefined => {
+    return streams.get(cameraId)
+  }
+
+  /**
+   * 初始化流统计
+   */
+  const initStreamStats = (cameraId: string) => {
+    streamStats.set(cameraId, {
+      bytesReceived: 0,
+      packetsReceived: 0,
+      packetsLost: 0,
+      frameRate: 0,
+      resolution: { width: 0, height: 0 },
+      bitrate: 0
+    })
+  }
+
+  /**
+   * 启动统计收集
+   */
+  const startStatsCollection = () => {
+    if (statsInterval) return
+
+    statsInterval = window.setInterval(() => {
+      // 计算总带宽
+      let totalBandwidth = 0
+      streamStats.forEach(stat => {
+        totalBandwidth += stat.bitrate
+      })
+      bandwidth.value = totalBandwidth / 1000 // kbps
+    }, 1000)
+  }
+
+  /**
+   * 停止统计收集
+   */
+  const stopStatsCollection = () => {
+    if (statsInterval) {
+      clearInterval(statsInterval)
+      statsInterval = null
+    }
+  }
+
+  // 计算属性
+  const enabledCameras = computed(() => cameras.value.filter(c => c.enabled))
+  const connectedCameras = computed(() => cameras.value.filter(c => streams.has(c.id)))
+  const networkQuality = computed(() => {
+    if (!isConnected.value) return 'disconnected'
+    if (latency.value < 50) return 'excellent'
+    if (latency.value < 100) return 'good'
+    if (latency.value < 200) return 'fair'
+    return 'poor'
+  })
+
+  // 清理
+  onUnmounted(() => {
+    disconnect()
+  })
+
+  return {
+    // 状态
+    isConnected,
+    isConnecting,
+    error,
+    latency,
+    bandwidth,
+    cameras,
+    streams,
+    streamStats,
+
+    // 计算属性
+    enabledCameras,
+    connectedCameras,
+    networkQuality,
+
+    // 方法
+    connect,
+    disconnect,
+    toggleCamera,
+    setCameraQuality,
+    getStream
+  }
+}
+
+// ======================== 阿里云 TURN 凭证获取 ========================
+
+/**
+ * 从后端获取阿里云 TURN 临时凭证
+ */
+export async function fetchAliyunTurnCredentials(apiUrl: string): Promise<RTCIceServer[]> {
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: 'fsm-pilot', ttl: 86400 })
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const data = await response.json()
+    return data.iceServers || ALIYUN_ICE_SERVERS
+  } catch (e) {
+    console.warn('[WebRTC] Failed to fetch TURN credentials, using defaults:', e)
+    return ALIYUN_ICE_SERVERS
+  }
+}
+
+// ======================== Mock WebRTC (演示用) ========================
+
+/**
+ * Mock 多摄像头 WebRTC 服务
+ * 用于前端演示，模拟视频流
+ */
+export function useMockMultiCameraWebRTC(vehicleId: string) {
+  const isConnected = ref(false)
+  const isConnecting = ref(false)
+  const latency = ref(45)
+  const bandwidth = ref(8500)
+  const cameras = ref<CameraConfig[]>(DEFAULT_CAMERAS.map(c => ({ ...c })))
+  const error = ref<string | null>(null)
+
+  let latencyInterval: number | null = null
+
+  const connect = async (): Promise<boolean> => {
+    isConnecting.value = true
+    console.log('[MockWebRTC] Connecting to vehicle:', vehicleId)
+
+    await new Promise(resolve => setTimeout(resolve, 1200))
+
+    isConnected.value = true
+    isConnecting.value = false
+
+    // 模拟延迟波动
+    latencyInterval = window.setInterval(() => {
+      latency.value = 35 + Math.random() * 30
+      bandwidth.value = 7000 + Math.random() * 3000
+    }, 2000)
+
+    return true
+  }
+
+  const disconnect = () => {
+    isConnected.value = false
+    isConnecting.value = false
+    if (latencyInterval) {
+      clearInterval(latencyInterval)
+      latencyInterval = null
+    }
+  }
+
+  const toggleCamera = (cameraId: string) => {
+    const camera = cameras.value.find(c => c.id === cameraId)
+    if (camera) {
+      camera.enabled = !camera.enabled
+    }
+  }
+
+  const enabledCameras = computed(() => cameras.value.filter(c => c.enabled))
+  const networkQuality = computed(() => {
+    if (!isConnected.value) return 'disconnected'
+    if (latency.value < 50) return 'excellent'
+    if (latency.value < 100) return 'good'
+    return 'fair'
+  })
+
+  onUnmounted(() => {
+    disconnect()
+  })
+
+  return {
+    isConnected,
+    isConnecting,
+    latency,
+    bandwidth,
+    cameras,
+    error,
+    enabledCameras,
+    networkQuality,
+    connect,
+    disconnect,
+    toggleCamera
+  }
+}

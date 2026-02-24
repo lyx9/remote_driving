@@ -1,7 +1,19 @@
+<!--
+  Guardian Mobility v0.0 - Remote Driving System
+
+  @project     Guardian Mobility Remote Driving Platform
+  @author      Li Yixiang
+  @institution City University of Hong Kong
+  @copyright   2025 City University of Hong Kong. All rights reserved.
+  @license     Proprietary
+
+  @component   Header
+  @description 顶部导航栏组件
+-->
 <template>
   <header class="app-header">
     <div class="brand">
-      FSM-<span>PILOT</span> V1.1
+      GUARDIAN <span>MOBILITY</span> v0.0
     </div>
 
     <div class="controls">

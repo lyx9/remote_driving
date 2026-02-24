@@ -9,6 +9,7 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <condition_variable>
 
 #include "fsm/config_manager.hpp"
 #include "fsm/logger.hpp"

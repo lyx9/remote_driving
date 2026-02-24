@@ -38,6 +38,7 @@ target_include_directories(fsm_vehicle_node PUBLIC
 target_link_libraries(fsm_vehicle_node
     fsm_common
     ${OpenCV_LIBRARIES}
+    x264
 )
 
 # ROS2 依赖

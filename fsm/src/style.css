@@ -1,13 +1,13 @@
-/* V11 Theme System */
+/* V11 Theme System - Orange-Red Tech Style */
 :root {
-  --primary: #00f2ff;
-  --primary-dim: rgba(0, 242, 255, 0.15);
+  --primary: #ff5722;
+  --primary-dim: rgba(255, 87, 34, 0.15);
   --warn: #ffcc00;
   --danger: #ff0055;
   --success: #00ff88;
-  --bg-dark: #020408;
-  --bg-panel: #0a1018;
-  --border: #1f3a52;
+  --bg-dark: #0a0a0a;
+  --bg-panel: #1a1a1a;
+  --border: #ff5722;
 
   --header-h: 40px;
   --ai-h: 30px;
@@ -60,7 +60,7 @@ body {
 .btn-ui:hover {
   border-color: var(--primary);
   color: var(--primary);
-  background: rgba(0, 242, 255, 0.05);
+  background: rgba(255, 87, 34, 0.05);
 }
 
 .btn-ui.active {
@@ -76,7 +76,7 @@ body {
 }
 
 .btn-ui.btn-play:hover {
-  background: rgba(0, 242, 255, 0.25);
+  background: rgba(255, 87, 34, 0.25);
 }
 
 .btn-mini {

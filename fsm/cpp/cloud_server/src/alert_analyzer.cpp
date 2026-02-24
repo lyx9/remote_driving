@@ -19,12 +19,12 @@ AlertAnalyzer::AlertAnalyzer(const config::CloudConfigManager& config)
 }
 
 void AlertAnalyzer::loadAlertRules() {
-    const auto& alert_config = config_.getAlertConfig();
-
-    if (!alert_config.enabled) {
-        LOG_INFO("[AlertAnalyzer] Alerts disabled");
-        return;
-    }
+    // TODO: Implement config_.getAlertConfig()
+    // const auto& alert_config = config_.getAlertConfig();
+    // if (!alert_config.enabled) {
+    //     FSM_LOG_INFO("[AlertAnalyzer] Alerts disabled");
+    //     return;
+    // }
 
     // 内置规则
     rules_.push_back({
@@ -122,7 +122,7 @@ void AlertAnalyzer::loadAlertRules() {
         "GPS signal lost"
     });
 
-    LOG_INFO("[AlertAnalyzer] Loaded " + std::to_string(rules_.size()) + " alert rules");
+    FSM_LOG_INFO("[AlertAnalyzer] Loaded " + std::to_string(rules_.size()) + " alert rules");
 }
 
 std::vector<Alert> AlertAnalyzer::analyze(const std::string& vehicle_id,
@@ -157,7 +157,7 @@ std::vector<Alert> AlertAnalyzer::analyze(const std::string& vehicle_id,
             active_alerts_[alert_key] = alert;
             new_alerts.push_back(alert);
 
-            LOG_WARNING("[AlertAnalyzer] New alert: " + alert.type +
+            FSM_LOG_WARN("[AlertAnalyzer] New alert: " + alert.type +
                        " for vehicle " + vehicle_id);
 
             // 触发回调
@@ -172,7 +172,7 @@ std::vector<Alert> AlertAnalyzer::analyze(const std::string& vehicle_id,
             alert.resolved_time = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now.time_since_epoch()).count();
 
-            LOG_INFO("[AlertAnalyzer] Alert resolved: " + alert.type +
+            FSM_LOG_INFO("[AlertAnalyzer] Alert resolved: " + alert.type +
                     " for vehicle " + vehicle_id);
 
             // 触发恢复回调
@@ -211,7 +211,7 @@ bool AlertAnalyzer::acknowledgeAlert(const std::string& alert_id) {
     for (auto& [key, alert] : active_alerts_) {
         if (alert.id == alert_id) {
             alert.acknowledged = true;
-            LOG_INFO("[AlertAnalyzer] Alert acknowledged: " + alert_id);
+            FSM_LOG_INFO("[AlertAnalyzer] Alert acknowledged: " + alert_id);
             return true;
         }
     }

@@ -1,0 +1,120 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                  ROSBAG REPLAY - QUICK REFERENCE                 ║
+║                    Guardian Mobility v0.0                        ║
+╚══════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────┐
+│ 🚀 QUICK START                                                   │
+└──────────────────────────────────────────────────────────────────┘
+
+1. Start Server:
+   cd /home/lyx/fsm/python
+   ./rosbag_server.sh start
+
+2. Open Browser:
+   http://localhost:3000/rosbag-replay-pro
+
+3. Verify "Connected" status (green)
+
+4. Click "Select RosBag" and choose a bag
+
+┌──────────────────────────────────────────────────────────────────┐
+│ 🔧 SERVER COMMANDS                                               │
+└──────────────────────────────────────────────────────────────────┘
+
+./rosbag_server.sh start     # Start server
+./rosbag_server.sh stop      # Stop server
+./rosbag_server.sh restart   # Restart server
+./rosbag_server.sh status    # Check status
+./rosbag_server.sh logs      # View logs
+
+┌──────────────────────────────────────────────────────────────────┐
+│ 📊 CURRENT STATUS                                                │
+└──────────────────────────────────────────────────────────────────┘
+
+✅ Server: RUNNING (PID: 21181)
+✅ Port: 8765
+✅ Protocol: WebSocket (ws://localhost:8765)
+✅ Bags Found: 10 ROS2 bags (~18 GB)
+✅ Frontend: READY
+
+┌──────────────────────────────────────────────────────────────────┐
+│ 🐛 TROUBLESHOOTING                                               │
+└──────────────────────────────────────────────────────────────────┘
+
+Problem: "Disconnected" status
+Fix: ./rosbag_server.sh start
+
+Problem: Port already in use
+Fix: lsof -ti :8765 | xargs kill -9
+     ./rosbag_server.sh start
+
+Problem: No bags found
+Check: ls -la /home/lyx/fsm/rosbag
+
+┌──────────────────────────────────────────────────────────────────┐
+│ 📁 KEY FILES                                                     │
+└──────────────────────────────────────────────────────────────────┘
+
+Server:
+  /home/lyx/fsm/python/rosbag_stream_server.py
+  /home/lyx/fsm/python/rosbag_server.sh
+
+Frontend:
+  /home/lyx/fsm/src/components/RosBagReplayPro.vue
+  /home/lyx/fsm/src/services/rosbagStreamService.ts
+
+Docs:
+  /home/lyx/fsm/ROSBAG_REPLAY_COMPLETE.md
+  /home/lyx/fsm/python/README_ROSBAG_SERVER.md
+
+Test:
+  http://localhost:3000/rosbag-test.html
+
+┌──────────────────────────────────────────────────────────────────┐
+│ 📦 AVAILABLE BAGS                                                │
+└──────────────────────────────────────────────────────────────────┘
+
+1. rosbag2_2025_02_23-16_49_58    (783 MB)
+2. rosbag2_2025_02_26-15_21_07    (1648 MB)
+3. rosbag2_2025_12_10-17_25_58    (3718 MB)
+4. rosbag2_2025_12_10-17_12_17    (4571 MB)
+5. rosbag2_2025_08_08-17_39_23    (1408 MB)
+6. rosbag2_2025_08_08-17_47_48    (1408 MB)
+7. rosbag2_2025_08_08-17_49_21    (1408 MB)
+8. rosbag2_2025_08_08-17_48_22    (1408 MB)
+9. rosbag2_2025_08_08-16_47_54    (1408 MB)
+10. rosbag2_2025_08_08-17_37_14   (1408 MB)
+
+┌──────────────────────────────────────────────────────────────────┐
+│ ✅ VERIFICATION                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+Test server:
+  python3 -c "
+  import asyncio, websockets, json
+  async def test():
+      async with websockets.connect('ws://localhost:8765') as ws:
+          await ws.recv()
+          await ws.send(json.dumps({'type': 'list_bags'}))
+          data = json.loads(await ws.recv())
+          print(f'Found {len(data[\"bags\"])} bags')
+  asyncio.run(test())
+  "
+
+Expected output: "Found 10 bags"
+
+┌──────────────────────────────────────────────────────────────────┐
+│ 📝 NOTES                                                         │
+└──────────────────────────────────────────────────────────────────┘
+
+• Server must be running for RosBag Replay to work
+• Server auto-discovers bags in /home/lyx/fsm/rosbag
+• Supports both ROS1 (.bag) and ROS2 (.db3) formats
+• Frontend auto-connects on page load
+• Logs available at /tmp/rosbag_server.log
+
+╔══════════════════════════════════════════════════════════════════╗
+║ Status: ✅ FULLY OPERATIONAL                                     ║
+║ Date: 2026-02-04                                                 ║
+╚══════════════════════════════════════════════════════════════════╝
