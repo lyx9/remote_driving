@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - RosBag Streaming Client Service
  *
@@ -82,20 +83,20 @@ class RosBagStreamService {
 
   async connect(): Promise<void> {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      console.log('[RosBagStreamService] Already connected')
+      logger.info('[RosBagStreamService] Already connected', 'ros')
       return
     }
 
     return new Promise((resolve, reject) => {
       try {
-        console.log(`[RosBagStreamService] Connecting to ${this.serverUrl}`)
+        logger.info(`[RosBagStreamService] Connecting to ${this.serverUrl}`, 'ros')
         this.connectionState.value = 'connecting'
         this.error.value = null
 
         this.ws = new WebSocket(this.serverUrl)
 
         this.ws.onopen = () => {
-          console.log('[RosBagStreamService] Connected')
+          logger.info('[RosBagStreamService] Connected', 'ros')
           this.connectionState.value = 'connected'
           this.reconnectAttempts = 0
           resolve()
@@ -106,19 +107,19 @@ class RosBagStreamService {
         }
 
         this.ws.onerror = (error) => {
-          console.error('[RosBagStreamService] WebSocket error:', error)
+          logger.error('[RosBagStreamService] WebSocket error:', error, 'ros')
           this.connectionState.value = 'error'
           this.error.value = 'WebSocket connection error'
           reject(error)
         }
 
         this.ws.onclose = () => {
-          console.log('[RosBagStreamService] Disconnected')
+          logger.info('[RosBagStreamService] Disconnected', 'ros')
           this.connectionState.value = 'disconnected'
           this.attemptReconnect()
         }
       } catch (error) {
-        console.error('[RosBagStreamService] Connection error:', error)
+        logger.error('[RosBagStreamService] Connection error:', error, 'ros')
         this.connectionState.value = 'error'
         this.error.value = error instanceof Error ? error.message : 'Connection failed'
         reject(error)
@@ -128,7 +129,7 @@ class RosBagStreamService {
 
   disconnect(): void {
     if (this.ws) {
-      console.log('[RosBagStreamService] Disconnecting')
+      logger.info('[RosBagStreamService] Disconnecting', 'ros')
       this.ws.close()
       this.ws = null
       this.connectionState.value = 'disconnected'
@@ -137,19 +138,17 @@ class RosBagStreamService {
 
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('[RosBagStreamService] Max reconnect attempts reached')
+      logger.info('[RosBagStreamService] Max reconnect attempts reached', 'ros')
       this.error.value = 'Failed to reconnect to server'
       return
     }
 
     this.reconnectAttempts++
-    console.log(
-      `[RosBagStreamService] Reconnecting in ${this.reconnectDelay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
-    )
+    logger.ros(`Reconnecting in ${this.reconnectDelay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
 
     setTimeout(() => {
       this.connect().catch((error) => {
-        console.error('[RosBagStreamService] Reconnect failed:', error)
+        logger.error('[RosBagStreamService] Reconnect failed:', error, 'ros')
       })
     }, this.reconnectDelay)
   }
@@ -159,11 +158,11 @@ class RosBagStreamService {
   private handleMessage(data: string): void {
     try {
       const message = JSON.parse(data)
-      console.log('[RosBagStreamService] Received message:', message.type)
+      logger.info('[RosBagStreamService] Received message:', message.type, 'ros')
 
       switch (message.type) {
         case 'bag_list':
-          console.log('[RosBagStreamService] Setting availableBags, count:', message.bags?.length)
+          logger.info('[RosBagStreamService] Setting availableBags, count:', message.bags?.length, 'ros')
           this.availableBags.value = message.bags
           break
 
@@ -190,7 +189,7 @@ class RosBagStreamService {
 
         case 'stream_complete':
           this.streamState.value = 'stopped'
-          console.log(`[RosBagStreamService] Stream complete: ${message.messageCount} messages`)
+          logger.info(`[RosBagStreamService] Stream complete: ${message.messageCount} messages`, 'ros')
           break
 
         case 'stream_stopped':
@@ -203,12 +202,12 @@ class RosBagStreamService {
           break
 
         case 'error':
-          console.error('[RosBagStreamService] Server error:', message.message)
+          logger.error('[RosBagStreamService] Server error:', message.message, 'ros')
           this.error.value = message.message
           break
 
         default:
-          console.warn('[RosBagStreamService] Unknown message type:', message.type)
+          logger.warn('[RosBagStreamService] Unknown message type:', message.type, 'ros')
       }
 
       // Call registered handlers
@@ -217,7 +216,7 @@ class RosBagStreamService {
         handler(message)
       }
     } catch (error) {
-      console.error('[RosBagStreamService] Error handling message:', error)
+      logger.error('[RosBagStreamService] Error handling message:', error, 'ros')
     }
   }
 
@@ -240,11 +239,11 @@ class RosBagStreamService {
   // ======================== Public API ========================
 
   async listBags(): Promise<RosBagInfo[]> {
-    console.log('[RosBagStreamService] Sending list_bags command')
+    logger.info('[RosBagStreamService] Sending list_bags command', 'ros')
     this.sendCommand({ command: 'list_bags' })
     return new Promise((resolve) => {
       const handler = (data: any) => {
-        console.log('[RosBagStreamService] list_bags handler called, bags:', data.bags?.length)
+        logger.info('[RosBagStreamService] list_bags handler called, bags:', data.bags?.length, 'ros')
         this.messageHandlers.delete('bag_list')
         resolve(data.bags)
       }
@@ -253,7 +252,7 @@ class RosBagStreamService {
   }
 
   async openBag(bagPath: string): Promise<void> {
-    console.log(`[RosBagStreamService] Opening bag: ${bagPath}`)
+    logger.info(`[RosBagStreamService] Opening bag: ${bagPath}`, 'ros')
     this.sendCommand({ command: 'open_bag', bagPath })
 
     return new Promise((resolve, reject) => {
@@ -288,7 +287,7 @@ class RosBagStreamService {
   }
 
   streamTopics(options: StreamOptions): void {
-    console.log('[RosBagStreamService] Starting stream:', options)
+    logger.info('[RosBagStreamService] Starting stream:', options, 'ros')
     this.sendCommand({
       command: 'stream_topics',
       ...options
@@ -296,7 +295,7 @@ class RosBagStreamService {
   }
 
   stopStream(): void {
-    console.log('[RosBagStreamService] Stopping stream')
+    logger.info('[RosBagStreamService] Stopping stream', 'ros')
     this.sendCommand({ command: 'stop_stream' })
     this.streamState.value = 'stopped'
   }
@@ -323,7 +322,7 @@ class RosBagStreamService {
 
   private sendCommand(command: any): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error('[RosBagStreamService] WebSocket not connected')
+      logger.error('[RosBagStreamService] WebSocket not connected', 'ros')
       this.error.value = 'Not connected to server'
       return
     }
@@ -331,7 +330,7 @@ class RosBagStreamService {
     try {
       this.ws.send(JSON.stringify(command))
     } catch (error) {
-      console.error('[RosBagStreamService] Error sending command:', error)
+      logger.error('[RosBagStreamService] Error sending command:', error, 'ros')
       this.error.value = error instanceof Error ? error.message : 'Failed to send command'
     }
   }

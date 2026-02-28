@@ -1,0 +1,136 @@
+# FSM-Pilot 云端生产配置
+# 部署前修改以下占位符:
+#   YOUR_DOMAIN       → 实际域名
+#   YOUR_TURN_SECRET  → 与 turnserver.conf 的 static-auth-secret 一致
+#   YOUR_TURN_IP      → ECS 公网 IP
+
+server:
+  signaling_port: 8080        # 内部监听，由 Nginx 代理为 wss://YOUR_DOMAIN/ws
+  api_port: 8081
+  websocket_port: 8080
+
+  tls:
+    enabled: false            # TLS 由 Nginx 终端，此处关闭
+    cert_file: ""
+    key_file: ""
+
+scheduling:
+  enabled: true
+  algorithm: "weighted_priority"
+  weights:
+    emergency: 0.35
+    latency: 0.25
+    distance: 0.20
+    battery: 0.10
+    task_priority: 0.10
+  thresholds:
+    max_latency_ms: 200
+    critical_latency_ms: 500
+    min_battery_percent: 20
+  parameters:
+    update_interval_ms: 100
+    vehicle_timeout_ms: 10000
+
+alerts:
+  enabled: true
+  rules:
+    - name: "high_latency"
+      condition: "latency > 300"
+      severity: "warning"
+      enabled: true
+    - name: "critical_latency"
+      condition: "latency > 500"
+      severity: "critical"
+      enabled: true
+    - name: "connection_lost"
+      condition: "disconnected"
+      severity: "critical"
+      enabled: true
+    - name: "low_battery"
+      condition: "battery < 20"
+      severity: "warning"
+      enabled: true
+    - name: "emergency_state"
+      condition: "emergency_level >= 3"
+      severity: "critical"
+      enabled: true
+  notifications:
+    websocket: true
+    log: true
+    email: false
+
+prediction:
+  enabled: false
+  model_endpoint: ""
+  compensation_enabled: false
+  parameters:
+    prediction_horizon: 2.0
+    update_rate_hz: 10
+    confidence_threshold: 0.8
+
+turn:
+  enabled: true
+  server: "YOUR_DOMAIN"
+  port: 3478
+  realm: "YOUR_DOMAIN"
+  credentials:
+    username: "fsm_turn"
+    password: "YOUR_TURN_SECRET"
+
+database:
+  enabled: false
+  redis:
+    host: "localhost"
+    port: 6379
+    password: ""
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "fsm_pilot"
+    username: "fsm_user"
+    password: ""
+
+logging:
+  level: "info"
+  file: "/var/log/fsm/cloud.log"
+  max_size_mb: 100
+  max_files: 10
+
+# ── MQTT relay ──────────────────────────────────────────────────────────────
+# The cloud server re-publishes received vehicle protobuf telemetry to this
+# MQTT broker, making it available to dashboards, BI tools, or other services.
+#
+# For local EMQX (default):
+#   broker_url: "tcp://emqx:1883"
+#
+# For Alibaba Cloud IoT Platform:
+#   broker_url: "tcp://YOUR_PRODUCT_KEY.iot-as-mqtt.cn-shanghai.aliyuncs.com:1883"
+#   username:   "YOUR_DEVICE_NAME&YOUR_PRODUCT_KEY"
+#   password:   "<hmac-sha256 signature — see docs>"
+#
+mqtt:
+  enabled: false                              # set true to enable MQTT relay
+  broker_url: "tcp://emqx:1883"              # EMQX in docker-compose
+  client_id:  "fsm_cloud_relay"
+  username:   ""
+  password:   ""
+  use_tls:    false
+  ca_cert_path: ""
+  keepalive_s: 60
+  qos: 1
+  telemetry_pub_prefix: "fsm/telemetry"      # +/{vehicle_id}
+  status_pub_prefix:    "fsm/status"         # +/{vehicle_id}
+
+api:
+  cors_enabled: true
+  cors_origins:
+    - "https://YOUR_DOMAIN"
+  rate_limit:
+    enabled: true
+    requests_per_minute: 1000
+  auth:
+    # jwt_secret is substituted by deploy.sh from FSM_JWT_SECRET env var.
+    # Leave empty to disable authentication (not recommended for production).
+    jwt_secret: "YOUR_JWT_SECRET"
+  # Operator-vehicle session timeout seconds (0 = use default 300 s).
+  session_timeout_s: 300

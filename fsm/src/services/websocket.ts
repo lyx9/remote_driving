@@ -14,6 +14,7 @@
 import { useFleetStore } from '@/stores/fleet'
 import { useSystemStore } from '@/stores/system'
 import type { Vehicle } from '@/types'
+import logger from '@/utils/logger'
 
 export interface WebSocketConfig {
   url: string
@@ -120,7 +121,7 @@ export class WebSocketService {
         this.ws = new WebSocket(this.config.url)
 
         this.ws.onopen = () => {
-          console.log('[WebSocket] Connected')
+          logger.ws('Connected', 'success')
           this.isConnecting = false
           this.reconnectAttempts = 0
           this.emit({ event: 'connection', data: { status: 'connected' } } as any)
@@ -132,18 +133,18 @@ export class WebSocketService {
             const message: WebSocketMessage = JSON.parse(event.data)
             this.handleMessage(message)
           } catch (e) {
-            console.error('[WebSocket] Failed to parse message:', e)
+            logger.ws(`Failed to parse message: ${e}`, 'error')
           }
         }
 
         this.ws.onerror = (error) => {
-          console.error('[WebSocket] Error:', error)
+          logger.ws(`Error: ${error}`, 'error')
           this.isConnecting = false
           reject(error)
         }
 
         this.ws.onclose = (event) => {
-          console.log('[WebSocket] Disconnected:', event.code, event.reason)
+          logger.ws(`Disconnected: code=${event.code} reason=${event.reason}`, 'warning')
           this.isConnecting = false
           this.emit({ event: 'connection', data: { status: 'disconnected' } } as any)
           this.scheduleReconnect()
@@ -177,7 +178,7 @@ export class WebSocketService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message))
     } else {
-      console.warn('[WebSocket] Not connected, message not sent')
+      logger.ws('Not connected, message not sent', 'warning')
     }
   }
 
@@ -309,13 +310,13 @@ export class WebSocketService {
   private handleSchedulingUpdate(message: SchedulingUpdateMessage): void {
     // 更新调度队列显示
     // 可以添加专门的scheduling store
-    console.log('[WebSocket] Scheduling update:', message.data.queue)
+    logger.ws(`Scheduling update: ${message.data.queue.length} vehicles`)
   }
 
   private handleLatencyUpdate(message: LatencyMessage): void {
     const { data } = message
     // 更新延迟显示
-    console.log(`[WebSocket] Latency for ${data.vehicle_id}: RTT=${data.rtt_ms}ms`)
+    logger.telemetry(`Latency ${data.vehicle_id}: RTT=${data.rtt_ms}ms`)
   }
 
   private emit(message: WebSocketMessage): void {
@@ -333,16 +334,16 @@ export class WebSocketService {
 
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= (this.config.maxReconnectAttempts || 10)) {
-      console.error('[WebSocket] Max reconnect attempts reached')
+      logger.ws('Max reconnect attempts reached', 'error')
       return
     }
 
     this.reconnectAttempts++
-    console.log(`[WebSocket] Reconnecting in ${this.config.reconnectInterval}ms (attempt ${this.reconnectAttempts})`)
+    logger.ws(`Reconnecting in ${this.config.reconnectInterval}ms (attempt ${this.reconnectAttempts})`)
 
     this.reconnectTimer = window.setTimeout(() => {
       this.connect().catch(e => {
-        console.error('[WebSocket] Reconnect failed:', e)
+        logger.ws(`Reconnect failed: ${e}`, 'error')
       })
     }, this.config.reconnectInterval)
   }

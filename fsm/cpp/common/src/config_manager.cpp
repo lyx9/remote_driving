@@ -5,310 +5,350 @@
 namespace fsm {
 namespace config {
 
-bool VehicleConfigManager::loadFromFile(const std::string& config_path) {
-    try {
-        YAML::Node config = YAML::LoadFile(config_path);
+// ---------------------------------------------------------------------------
+// VehicleConfigManager
+// ---------------------------------------------------------------------------
 
-        if (config["vehicle"]) {
-            parseVehicle(config["vehicle"]);
-        }
-
-        if (config["sensors"]) {
-            parseSensors(config["sensors"]);
-        }
-
-        if (config["webrtc"]) {
-            parseWebRTC(config["webrtc"]);
-        }
-
-        if (config["control"]) {
-            parseControl(config["control"]);
-        }
-
-        FSM_LOG_INFO("Vehicle config loaded from: {}", config_path);
-        return true;
-
-    } catch (const YAML::Exception& e) {
-        FSM_LOG_ERROR("Failed to load vehicle config: {}", e.what());
-        return false;
-    }
+bool VehicleConfigManager::LoadFromFile(const std::string& path) {
+  try {
+    YAML::Node cfg = YAML::LoadFile(path);
+    if (cfg["vehicle"]) ParseVehicle(cfg["vehicle"]);
+    if (cfg["sensors"]) ParseSensors(cfg["sensors"]);
+    if (cfg["webrtc"])  ParseWebRtc(cfg["webrtc"]);
+    if (cfg["control"]) ParseControl(cfg["control"]);
+    if (cfg["mqtt"])    ParseMqtt(cfg["mqtt"]);
+    FSM_LOG_INFO("Vehicle config loaded: {}", path);
+    return true;
+  } catch (const YAML::Exception& e) {
+    FSM_LOG_ERROR("Failed to load vehicle config: {}", e.what());
+    return false;
+  }
 }
 
-void VehicleConfigManager::parseVehicle(const YAML::Node& node) {
-    if (node["id"]) vehicle_id_ = node["id"].as<std::string>();
-    if (node["type"]) vehicle_type_ = node["type"].as<std::string>();
-    if (node["name"]) vehicle_name_ = node["name"].as<std::string>();
+bool VehicleConfigManager::SaveToFile(const std::string& path) const {
+  try {
+    YAML::Emitter out;
+    out << YAML::BeginMap;
 
-    if (node["parameters"]) {
-        auto params = node["parameters"];
-        if (params["wheelbase"]) vehicle_params_.wheelbase = params["wheelbase"].as<double>();
-        if (params["max_steering_angle"]) vehicle_params_.max_steering_angle = params["max_steering_angle"].as<double>();
-        if (params["max_speed"]) vehicle_params_.max_speed = params["max_speed"].as<double>();
-        if (params["max_acceleration"]) vehicle_params_.max_acceleration = params["max_acceleration"].as<double>();
-        if (params["max_deceleration"]) vehicle_params_.max_deceleration = params["max_deceleration"].as<double>();
-        if (params["track_width"]) vehicle_params_.track_width = params["track_width"].as<double>();
-    }
-}
+    out << YAML::Key << "vehicle" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "id"   << YAML::Value << vehicle_id_;
+    out << YAML::Key << "type" << YAML::Value << vehicle_type_;
+    out << YAML::Key << "name" << YAML::Value << vehicle_name_;
+    out << YAML::Key << "parameters" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "wheelbase"          << YAML::Value << vehicle_params_.wheelbase_m;
+    out << YAML::Key << "max_steering_angle" << YAML::Value << vehicle_params_.max_steering_angle_deg;
+    out << YAML::Key << "max_speed"          << YAML::Value << vehicle_params_.max_speed_kph;
+    out << YAML::EndMap;
+    out << YAML::EndMap;
 
-void VehicleConfigManager::parseSensors(const YAML::Node& node) {
-    if (node["cameras"] && node["cameras"]["list"]) {
-        cameras_.clear();
-        for (const auto& cam_node : node["cameras"]["list"]) {
-            CameraConfig cam;
-            if (cam_node["id"]) cam.id = cam_node["id"].as<std::string>();
-            if (cam_node["topic"]) cam.topic = cam_node["topic"].as<std::string>();
-            if (cam_node["fps"]) cam.fps = cam_node["fps"].as<int>();
-            if (cam_node["width"]) cam.width = cam_node["width"].as<int>();
-            if (cam_node["height"]) cam.height = cam_node["height"].as<int>();
-            if (cam_node["encoding"]) cam.encoding = cam_node["encoding"].as<std::string>();
-            if (cam_node["bitrate"]) cam.bitrate = cam_node["bitrate"].as<int>();
-            if (cam_node["enabled"]) cam.enabled = cam_node["enabled"].as<bool>();
-            cameras_.push_back(cam);
-        }
-    }
-
-    // 解析传感器话题配置
-    if (node["topics"]) {
-        auto topics = node["topics"];
-        if (topics["velocity_status"]) sensor_topics_.velocity_status = topics["velocity_status"].as<std::string>();
-        if (topics["steering_status"]) sensor_topics_.steering_status = topics["steering_status"].as<std::string>();
-        if (topics["gear_status"]) sensor_topics_.gear_status = topics["gear_status"].as<std::string>();
-        if (topics["control_mode"]) sensor_topics_.control_mode = topics["control_mode"].as<std::string>();
-        if (topics["localization"]) sensor_topics_.localization = topics["localization"].as<std::string>();
-        if (topics["diagnostics"]) sensor_topics_.diagnostics = topics["diagnostics"].as<std::string>();
-    }
-}
-
-void VehicleConfigManager::parseWebRTC(const YAML::Node& node) {
-    if (node["stun_servers"]) {
-        webrtc_config_.stun_servers.clear();
-        for (const auto& server : node["stun_servers"]) {
-            webrtc_config_.stun_servers.push_back(server.as<std::string>());
-        }
-    }
-
-    if (node["turn_servers"]) {
-        webrtc_config_.turn_servers.clear();
-        for (const auto& server : node["turn_servers"]) {
-            if (server["url"]) {
-                webrtc_config_.turn_servers.push_back(server["url"].as<std::string>());
-            }
-            if (server["username"]) webrtc_config_.turn_username = server["username"].as<std::string>();
-            if (server["credential"]) webrtc_config_.turn_password = server["credential"].as<std::string>();
-        }
-    }
-
-    if (node["signaling"]) {
-        auto sig = node["signaling"];
-        if (sig["url"]) webrtc_config_.signaling_url = sig["url"].as<std::string>();
-        if (sig["reconnect_interval"]) webrtc_config_.reconnect_interval_ms = sig["reconnect_interval"].as<int>();
-    }
-}
-
-void VehicleConfigManager::parseControl(const YAML::Node& node) {
-    if (node["topics"]) {
-        auto topics = node["topics"];
-        if (topics["steering_cmd"]) control_topics_.steering_cmd = topics["steering_cmd"].as<std::string>();
-        if (topics["velocity_cmd"]) control_topics_.velocity_cmd = topics["velocity_cmd"].as<std::string>();
-        if (topics["gear_cmd"]) control_topics_.gear_cmd = topics["gear_cmd"].as<std::string>();
-        if (topics["turn_signal_cmd"]) control_topics_.turn_signal_cmd = topics["turn_signal_cmd"].as<std::string>();
-        if (topics["emergency"]) control_topics_.emergency_cmd = topics["emergency"].as<std::string>();
-    }
-
-    if (node["safety"]) {
-        parseSafety(node["safety"]);
-    }
-}
-
-void VehicleConfigManager::parseSafety(const YAML::Node& node) {
-    if (node["max_steering_rate"]) safety_config_.max_steering_rate = node["max_steering_rate"].as<double>();
-    if (node["emergency_decel"]) safety_config_.emergency_decel = node["emergency_decel"].as<double>();
-    if (node["watchdog_timeout_ms"]) safety_config_.watchdog_timeout_ms = node["watchdog_timeout_ms"].as<int>();
-    if (node["enable_soft_limits"]) safety_config_.enable_soft_limits = node["enable_soft_limits"].as<bool>();
-    if (node["enable_emergency_stop"]) safety_config_.enable_emergency_stop = node["enable_emergency_stop"].as<bool>();
-}
-
-std::optional<CameraConfig> VehicleConfigManager::getCameraById(const std::string& id) const {
+    out << YAML::Key << "sensors" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "cameras" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "list" << YAML::Value << YAML::BeginSeq;
     for (const auto& cam : cameras_) {
-        if (cam.id == id) {
-            return cam;
-        }
+      out << YAML::BeginMap;
+      out << YAML::Key << "id"      << YAML::Value << cam.id;
+      out << YAML::Key << "topic"   << YAML::Value << cam.topic;
+      out << YAML::Key << "fps"     << YAML::Value << cam.fps;
+      out << YAML::Key << "width"   << YAML::Value << cam.width;
+      out << YAML::Key << "height"  << YAML::Value << cam.height;
+      out << YAML::Key << "bitrate" << YAML::Value << cam.bitrate_bps;
+      out << YAML::EndMap;
     }
-    return std::nullopt;
+    out << YAML::EndSeq;
+    out << YAML::EndMap;
+    out << YAML::EndMap;
+
+    out << YAML::EndMap;
+
+    std::ofstream fout(path);
+    fout << out.c_str();
+    FSM_LOG_INFO("Vehicle config saved: {}", path);
+    return true;
+  } catch (const std::exception& e) {
+    FSM_LOG_ERROR("Failed to save vehicle config: {}", e.what());
+    return false;
+  }
 }
 
-bool VehicleConfigManager::saveToFile(const std::string& config_path) const {
-    try {
-        YAML::Emitter out;
-        out << YAML::BeginMap;
-
-        // Vehicle section
-        out << YAML::Key << "vehicle" << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "id" << YAML::Value << vehicle_id_;
-        out << YAML::Key << "type" << YAML::Value << vehicle_type_;
-        out << YAML::Key << "name" << YAML::Value << vehicle_name_;
-        out << YAML::Key << "parameters" << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "wheelbase" << YAML::Value << vehicle_params_.wheelbase;
-        out << YAML::Key << "max_steering_angle" << YAML::Value << vehicle_params_.max_steering_angle;
-        out << YAML::Key << "max_speed" << YAML::Value << vehicle_params_.max_speed;
-        out << YAML::EndMap;
-        out << YAML::EndMap;
-
-        // Sensors section
-        out << YAML::Key << "sensors" << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "cameras" << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "list" << YAML::Value << YAML::BeginSeq;
-        for (const auto& cam : cameras_) {
-            out << YAML::BeginMap;
-            out << YAML::Key << "id" << YAML::Value << cam.id;
-            out << YAML::Key << "topic" << YAML::Value << cam.topic;
-            out << YAML::Key << "fps" << YAML::Value << cam.fps;
-            out << YAML::Key << "width" << YAML::Value << cam.width;
-            out << YAML::Key << "height" << YAML::Value << cam.height;
-            out << YAML::EndMap;
-        }
-        out << YAML::EndSeq;
-        out << YAML::EndMap;
-        out << YAML::EndMap;
-
-        out << YAML::EndMap;
-
-        std::ofstream fout(config_path);
-        fout << out.c_str();
-        fout.close();
-
-        FSM_LOG_INFO("Vehicle config saved to: {}", config_path);
-        return true;
-
-    } catch (const std::exception& e) {
-        FSM_LOG_ERROR("Failed to save vehicle config: {}", e.what());
-        return false;
-    }
+std::optional<CameraConfig> VehicleConfigManager::FindCameraById(
+    const std::string& id) const {
+  for (const auto& cam : cameras_) {
+    if (cam.id == id) return cam;
+  }
+  return std::nullopt;
 }
 
-// ============================================================================
-// CloudConfigManager Implementation
-// ============================================================================
+void VehicleConfigManager::ParseVehicle(const YAML::Node& node) {
+  if (node["id"])   vehicle_id_   = node["id"].as<std::string>();
+  if (node["type"]) vehicle_type_ = node["type"].as<std::string>();
+  if (node["name"]) vehicle_name_ = node["name"].as<std::string>();
 
-bool CloudConfigManager::loadFromFile(const std::string& config_path) {
-    try {
-        YAML::Node config = YAML::LoadFile(config_path);
-
-        if (config["server"]) {
-            parseServer(config["server"]);
-        }
-
-        if (config["scheduling"]) {
-            parseScheduling(config["scheduling"]);
-        }
-
-        if (config["alerts"]) {
-            parseAlerts(config["alerts"]);
-        }
-
-        if (config["prediction"]) {
-            parsePrediction(config["prediction"]);
-        }
-
-        FSM_LOG_INFO("Cloud config loaded from: {}", config_path);
-        return true;
-
-    } catch (const YAML::Exception& e) {
-        FSM_LOG_ERROR("Failed to load cloud config: {}", e.what());
-        return false;
-    }
+  if (node["parameters"]) {
+    const auto& p = node["parameters"];
+    if (p["wheelbase"])          vehicle_params_.wheelbase_m            = p["wheelbase"].as<double>();
+    if (p["max_steering_angle"]) vehicle_params_.max_steering_angle_deg = p["max_steering_angle"].as<double>();
+    if (p["max_speed"])          vehicle_params_.max_speed_kph          = p["max_speed"].as<double>();
+    if (p["max_acceleration"])   vehicle_params_.max_acceleration_mps2  = p["max_acceleration"].as<double>();
+    if (p["max_deceleration"])   vehicle_params_.max_deceleration_mps2  = p["max_deceleration"].as<double>();
+    if (p["track_width"])        vehicle_params_.track_width_m          = p["track_width"].as<double>();
+  }
 }
 
-void CloudConfigManager::parseServer(const YAML::Node& node) {
-    if (node["signaling_port"]) signaling_port_ = node["signaling_port"].as<int>();
-    if (node["api_port"]) api_port_ = node["api_port"].as<int>();
+void VehicleConfigManager::ParseSensors(const YAML::Node& node) {
+  // Helper: parse a QosConfig node.
+  auto parseQos = [](const YAML::Node& q, QosConfig& out) {
+    if (q["reliability"]) out.reliability = q["reliability"].as<std::string>();
+    if (q["durability"])  out.durability  = q["durability"].as<std::string>();
+    if (q["depth"])       out.depth       = q["depth"].as<int>();
+  };
+
+  if (node["cameras"] && node["cameras"]["list"]) {
+    cameras_.clear();
+    for (const auto& n : node["cameras"]["list"]) {
+      CameraConfig cam;
+      if (n["id"])       cam.id          = n["id"].as<std::string>();
+      if (n["topic"])    cam.topic       = n["topic"].as<std::string>();
+      if (n["fps"])      cam.fps         = n["fps"].as<int>();
+      if (n["width"])    cam.width       = n["width"].as<int>();
+      if (n["height"])   cam.height      = n["height"].as<int>();
+      if (n["encoding"]) cam.encoding    = n["encoding"].as<std::string>();
+      if (n["bitrate"])  cam.bitrate_bps = n["bitrate"].as<int>();
+      if (n["enabled"])  cam.enabled     = n["enabled"].as<bool>();
+      if (n["qos"])      parseQos(n["qos"], cam.qos);
+      cameras_.push_back(cam);
+    }
+  }
+
+  if (node["topics"]) {
+    const auto& t = node["topics"];
+    if (t["velocity_status"]) sensor_topics_.velocity_status = t["velocity_status"].as<std::string>();
+    if (t["steering_status"]) sensor_topics_.steering_status = t["steering_status"].as<std::string>();
+    if (t["gear_status"])     sensor_topics_.gear_status     = t["gear_status"].as<std::string>();
+    if (t["control_mode"])    sensor_topics_.control_mode    = t["control_mode"].as<std::string>();
+    if (t["localization"])    sensor_topics_.localization    = t["localization"].as<std::string>();
+    if (t["diagnostics"])     sensor_topics_.diagnostics     = t["diagnostics"].as<std::string>();
+  }
+
+  if (node["topics_qos"]) {
+    const auto& tq = node["topics_qos"];
+    if (tq["cameras"])      parseQos(tq["cameras"],      sensor_qos_.cameras);
+    if (tq["vehicle"])      parseQos(tq["vehicle"],      sensor_qos_.vehicle);
+    if (tq["localization"]) parseQos(tq["localization"], sensor_qos_.localization);
+  }
 }
 
-void CloudConfigManager::parseScheduling(const YAML::Node& node) {
-    if (node["enabled"]) scheduling_config_.enabled = node["enabled"].as<bool>();
-    if (node["algorithm"]) scheduling_config_.algorithm = node["algorithm"].as<std::string>();
+void VehicleConfigManager::ParseWebRtc(const YAML::Node& node) {
+  if (node["stun_servers"]) {
+    webrtc_config_.stun_servers.clear();
+    for (const auto& s : node["stun_servers"])
+      webrtc_config_.stun_servers.push_back(s.as<std::string>());
+  }
 
-    if (node["weights"]) {
-        auto weights = node["weights"];
-        if (weights["emergency"]) scheduling_config_.weights.emergency = weights["emergency"].as<double>();
-        if (weights["latency"]) scheduling_config_.weights.latency = weights["latency"].as<double>();
-        if (weights["distance"]) scheduling_config_.weights.distance = weights["distance"].as<double>();
-        if (weights["battery"]) scheduling_config_.weights.battery = weights["battery"].as<double>();
-        if (weights["task_priority"]) scheduling_config_.weights.task_priority = weights["task_priority"].as<double>();
+  if (node["turn_servers"]) {
+    webrtc_config_.turn_servers.clear();
+    for (const auto& s : node["turn_servers"]) {
+      if (s["url"])        webrtc_config_.turn_servers.push_back(s["url"].as<std::string>());
+      if (s["username"])   webrtc_config_.turn_username = s["username"].as<std::string>();
+      if (s["credential"]) webrtc_config_.turn_password = s["credential"].as<std::string>();
     }
+  }
 
-    if (node["thresholds"]) {
-        auto th = node["thresholds"];
-        if (th["max_latency_ms"]) scheduling_config_.max_latency_ms = th["max_latency_ms"].as<int>();
-        if (th["critical_latency_ms"]) scheduling_config_.critical_latency_ms = th["critical_latency_ms"].as<int>();
-        if (th["min_battery_percent"]) scheduling_config_.min_battery_percent = th["min_battery_percent"].as<double>();
-    }
+  if (node["signaling"]) {
+    const auto& sig = node["signaling"];
+    if (sig["url"])                webrtc_config_.signaling_url         = sig["url"].as<std::string>();
+    if (sig["reconnect_interval"]) webrtc_config_.reconnect_interval_ms = sig["reconnect_interval"].as<int>();
+  }
 }
 
-void CloudConfigManager::parseAlerts(const YAML::Node& node) {
-    if (node["rules"]) {
-        alert_rules_.clear();
-        for (const auto& rule_node : node["rules"]) {
-            AlertRule rule;
-            if (rule_node["name"]) rule.name = rule_node["name"].as<std::string>();
-            if (rule_node["condition"]) rule.condition = rule_node["condition"].as<std::string>();
-            if (rule_node["severity"]) rule.severity = rule_node["severity"].as<std::string>();
-            if (rule_node["enabled"]) rule.enabled = rule_node["enabled"].as<bool>();
-            alert_rules_.push_back(rule);
-        }
-    }
+void VehicleConfigManager::ParseControl(const YAML::Node& node) {
+  auto parseQos = [](const YAML::Node& q, QosConfig& out) {
+    if (q["reliability"]) out.reliability = q["reliability"].as<std::string>();
+    if (q["durability"])  out.durability  = q["durability"].as<std::string>();
+    if (q["depth"])       out.depth       = q["depth"].as<int>();
+  };
+
+  if (node["topics"]) {
+    const auto& t = node["topics"];
+    if (t["steering_cmd"])    control_topics_.steering_cmd    = t["steering_cmd"].as<std::string>();
+    if (t["velocity_cmd"])    control_topics_.velocity_cmd    = t["velocity_cmd"].as<std::string>();
+    if (t["gear_cmd"])        control_topics_.gear_cmd        = t["gear_cmd"].as<std::string>();
+    if (t["turn_signal_cmd"]) control_topics_.turn_signal_cmd = t["turn_signal_cmd"].as<std::string>();
+    if (t["emergency"])       control_topics_.emergency_cmd   = t["emergency"].as<std::string>();
+  }
+
+  if (node["topics_qos"]) {
+    const auto& tq = node["topics_qos"];
+    if (tq["steering_cmd"])   parseQos(tq["steering_cmd"],  control_qos_.steering_cmd);
+    if (tq["gear_cmd"])       parseQos(tq["gear_cmd"],      control_qos_.gear_cmd);
+    if (tq["turn_signal"])    parseQos(tq["turn_signal"],   control_qos_.turn_signal);
+    if (tq["emergency_cmd"])  parseQos(tq["emergency_cmd"], control_qos_.emergency_cmd);
+  }
+
+  if (node["safety"]) ParseSafety(node["safety"]);
 }
 
-void CloudConfigManager::parsePrediction(const YAML::Node& node) {
-    if (node["enabled"]) prediction_config_.enabled = node["enabled"].as<bool>();
-    if (node["model_endpoint"]) prediction_config_.model_endpoint = node["model_endpoint"].as<std::string>();
-    if (node["compensation_enabled"]) prediction_config_.compensation_enabled = node["compensation_enabled"].as<bool>();
-    if (node["prediction_horizon"]) prediction_config_.prediction_horizon = node["prediction_horizon"].as<double>();
-    if (node["update_rate_hz"]) prediction_config_.update_rate_hz = node["update_rate_hz"].as<int>();
+void VehicleConfigManager::ParseSafety(const YAML::Node& node) {
+  if (node["max_steering_rate"])       safety_config_.max_steering_rate_dps    = node["max_steering_rate"].as<double>();
+  if (node["emergency_decel"])         safety_config_.emergency_decel_mps2     = node["emergency_decel"].as<double>();
+  if (node["watchdog_timeout_ms"])     safety_config_.watchdog_timeout_ms      = node["watchdog_timeout_ms"].as<int>();
+  if (node["enable_soft_limits"])      safety_config_.soft_limits_enabled      = node["enable_soft_limits"].as<bool>();
+  if (node["enable_emergency_stop"])   safety_config_.emergency_stop_enabled   = node["enable_emergency_stop"].as<bool>();
+  if (node["command_publish_rate_hz"]) safety_config_.command_publish_rate_hz  = node["command_publish_rate_hz"].as<int>();
 }
 
-bool CloudConfigManager::saveToFile(const std::string& config_path) const {
-    try {
-        YAML::Emitter out;
-        out << YAML::BeginMap;
+void VehicleConfigManager::ParseMqtt(const YAML::Node& node) {
+  if (node["enabled"])         mqtt_config_.enabled       = node["enabled"].as<bool>();
+  if (node["broker_url"])      mqtt_config_.broker_url    = node["broker_url"].as<std::string>();
+  if (node["client_id"])       mqtt_config_.client_id     = node["client_id"].as<std::string>();
+  if (node["username"])        mqtt_config_.username      = node["username"].as<std::string>();
+  if (node["password"])        mqtt_config_.password      = node["password"].as<std::string>();
+  if (node["use_tls"])         mqtt_config_.use_tls       = node["use_tls"].as<bool>();
+  if (node["ca_cert_path"])    mqtt_config_.ca_cert_path  = node["ca_cert_path"].as<std::string>();
+  if (node["keepalive_s"])     mqtt_config_.keepalive_s   = node["keepalive_s"].as<int>();
+  if (node["qos"])             mqtt_config_.qos           = node["qos"].as<int>();
+  if (node["retain"])          mqtt_config_.retain        = node["retain"].as<bool>();
+  if (node["telemetry_topic"]) mqtt_config_.telemetry_topic = node["telemetry_topic"].as<std::string>();
+  if (node["control_topic"])   mqtt_config_.control_topic   = node["control_topic"].as<std::string>();
+  if (node["status_topic"])    mqtt_config_.status_topic    = node["status_topic"].as<std::string>();
 
-        // Server
-        out << YAML::Key << "server" << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "signaling_port" << YAML::Value << signaling_port_;
-        out << YAML::Key << "api_port" << YAML::Value << api_port_;
-        out << YAML::EndMap;
+  if (node["aliyun"]) {
+    const auto& a = node["aliyun"];
+    if (a["mode"])           mqtt_config_.aliyun_mode          = a["mode"].as<bool>();
+    if (a["product_key"])    mqtt_config_.aliyun_product_key   = a["product_key"].as<std::string>();
+    if (a["device_name"])    mqtt_config_.aliyun_device_name   = a["device_name"].as<std::string>();
+    if (a["device_secret"])  mqtt_config_.aliyun_device_secret = a["device_secret"].as<std::string>();
+    if (a["region"])         mqtt_config_.aliyun_region        = a["region"].as<std::string>();
+  }
+}
 
-        // Scheduling
-        out << YAML::Key << "scheduling" << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "enabled" << YAML::Value << scheduling_config_.enabled;
-        out << YAML::Key << "algorithm" << YAML::Value << scheduling_config_.algorithm;
-        out << YAML::Key << "weights" << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "emergency" << YAML::Value << scheduling_config_.weights.emergency;
-        out << YAML::Key << "latency" << YAML::Value << scheduling_config_.weights.latency;
-        out << YAML::Key << "distance" << YAML::Value << scheduling_config_.weights.distance;
-        out << YAML::Key << "battery" << YAML::Value << scheduling_config_.weights.battery;
-        out << YAML::Key << "task_priority" << YAML::Value << scheduling_config_.weights.task_priority;
-        out << YAML::EndMap;
-        out << YAML::EndMap;
+// ---------------------------------------------------------------------------
+// CloudConfigManager
+// ---------------------------------------------------------------------------
 
-        // Prediction
-        out << YAML::Key << "prediction" << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "enabled" << YAML::Value << prediction_config_.enabled;
-        out << YAML::Key << "compensation_enabled" << YAML::Value << prediction_config_.compensation_enabled;
-        out << YAML::EndMap;
+bool CloudConfigManager::LoadFromFile(const std::string& path) {
+  try {
+    YAML::Node cfg = YAML::LoadFile(path);
+    if (cfg["server"])     ParseServer(cfg["server"]);
+    if (cfg["scheduling"]) ParseScheduling(cfg["scheduling"]);
+    if (cfg["alerts"])     ParseAlerts(cfg["alerts"]);
+    if (cfg["prediction"]) ParsePrediction(cfg["prediction"]);
+    if (cfg["mqtt"])       ParseCloudMqtt(cfg["mqtt"]);
+    if (cfg["api"])        ParseApi(cfg["api"]);
+    FSM_LOG_INFO("Cloud config loaded: {}", path);
+    return true;
+  } catch (const YAML::Exception& e) {
+    FSM_LOG_ERROR("Failed to load cloud config: {}", e.what());
+    return false;
+  }
+}
 
-        out << YAML::EndMap;
+bool CloudConfigManager::SaveToFile(const std::string& path) const {
+  try {
+    YAML::Emitter out;
+    out << YAML::BeginMap;
 
-        std::ofstream fout(config_path);
-        fout << out.c_str();
-        fout.close();
+    out << YAML::Key << "server" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "signaling_port" << YAML::Value << signaling_port_;
+    out << YAML::Key << "api_port"       << YAML::Value << api_port_;
+    out << YAML::EndMap;
 
-        return true;
+    out << YAML::Key << "scheduling" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled"   << YAML::Value << scheduling_config_.enabled;
+    out << YAML::Key << "algorithm" << YAML::Value << scheduling_config_.algorithm;
+    out << YAML::Key << "weights" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "emergency"     << YAML::Value << scheduling_config_.weights.emergency;
+    out << YAML::Key << "latency"       << YAML::Value << scheduling_config_.weights.latency;
+    out << YAML::Key << "distance"      << YAML::Value << scheduling_config_.weights.distance;
+    out << YAML::Key << "battery"       << YAML::Value << scheduling_config_.weights.battery;
+    out << YAML::Key << "task_priority" << YAML::Value << scheduling_config_.weights.task_priority;
+    out << YAML::EndMap;
+    out << YAML::EndMap;
 
-    } catch (const std::exception& e) {
-        FSM_LOG_ERROR("Failed to save cloud config: {}", e.what());
-        return false;
+    out << YAML::Key << "prediction" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled"              << YAML::Value << prediction_config_.enabled;
+    out << YAML::Key << "compensation_enabled" << YAML::Value << prediction_config_.compensation_enabled;
+    out << YAML::EndMap;
+
+    out << YAML::EndMap;
+
+    std::ofstream fout(path);
+    fout << out.c_str();
+    return true;
+  } catch (const std::exception& e) {
+    FSM_LOG_ERROR("Failed to save cloud config: {}", e.what());
+    return false;
+  }
+}
+
+void CloudConfigManager::ParseServer(const YAML::Node& node) {
+  if (node["signaling_port"]) signaling_port_ = node["signaling_port"].as<int>();
+  if (node["api_port"])       api_port_       = node["api_port"].as<int>();
+}
+
+void CloudConfigManager::ParseScheduling(const YAML::Node& node) {
+  if (node["enabled"])   scheduling_config_.enabled   = node["enabled"].as<bool>();
+  if (node["algorithm"]) scheduling_config_.algorithm = node["algorithm"].as<std::string>();
+
+  if (node["weights"]) {
+    const auto& w = node["weights"];
+    if (w["emergency"])     scheduling_config_.weights.emergency     = w["emergency"].as<double>();
+    if (w["latency"])       scheduling_config_.weights.latency       = w["latency"].as<double>();
+    if (w["distance"])      scheduling_config_.weights.distance      = w["distance"].as<double>();
+    if (w["battery"])       scheduling_config_.weights.battery       = w["battery"].as<double>();
+    if (w["task_priority"]) scheduling_config_.weights.task_priority = w["task_priority"].as<double>();
+  }
+
+  if (node["thresholds"]) {
+    const auto& th = node["thresholds"];
+    if (th["max_latency_ms"])      scheduling_config_.max_latency_ms      = th["max_latency_ms"].as<int>();
+    if (th["critical_latency_ms"]) scheduling_config_.critical_latency_ms = th["critical_latency_ms"].as<int>();
+    if (th["min_battery_percent"]) scheduling_config_.min_battery_pct     = th["min_battery_percent"].as<double>();
+  }
+}
+
+void CloudConfigManager::ParseAlerts(const YAML::Node& node) {
+  if (node["rules"]) {
+    alert_rules_.clear();
+    for (const auto& r : node["rules"]) {
+      AlertRuleConfig rule;
+      if (r["name"])      rule.name      = r["name"].as<std::string>();
+      if (r["condition"]) rule.condition = r["condition"].as<std::string>();
+      if (r["severity"])  rule.severity  = r["severity"].as<std::string>();
+      if (r["enabled"])   rule.enabled   = r["enabled"].as<bool>();
+      alert_rules_.push_back(rule);
     }
+  }
+}
+
+void CloudConfigManager::ParsePrediction(const YAML::Node& node) {
+  if (node["enabled"])               prediction_config_.enabled              = node["enabled"].as<bool>();
+  if (node["model_endpoint"])        prediction_config_.model_endpoint       = node["model_endpoint"].as<std::string>();
+  if (node["compensation_enabled"])  prediction_config_.compensation_enabled = node["compensation_enabled"].as<bool>();
+  if (node["prediction_horizon"])    prediction_config_.prediction_horizon_s = node["prediction_horizon"].as<double>();
+  if (node["update_rate_hz"])        prediction_config_.update_rate_hz       = node["update_rate_hz"].as<int>();
+}
+
+void CloudConfigManager::ParseCloudMqtt(const YAML::Node& node) {
+  if (node["enabled"])              cloud_mqtt_config_.enabled              = node["enabled"].as<bool>();
+  if (node["broker_url"])           cloud_mqtt_config_.broker_url           = node["broker_url"].as<std::string>();
+  if (node["client_id"])            cloud_mqtt_config_.client_id            = node["client_id"].as<std::string>();
+  if (node["username"])             cloud_mqtt_config_.username             = node["username"].as<std::string>();
+  if (node["password"])             cloud_mqtt_config_.password             = node["password"].as<std::string>();
+  if (node["use_tls"])              cloud_mqtt_config_.use_tls              = node["use_tls"].as<bool>();
+  if (node["ca_cert_path"])         cloud_mqtt_config_.ca_cert_path         = node["ca_cert_path"].as<std::string>();
+  if (node["keepalive_s"])          cloud_mqtt_config_.keepalive_s          = node["keepalive_s"].as<int>();
+  if (node["qos"])                  cloud_mqtt_config_.qos                  = node["qos"].as<int>();
+  if (node["telemetry_pub_prefix"]) cloud_mqtt_config_.telemetry_pub_prefix = node["telemetry_pub_prefix"].as<std::string>();
+  if (node["status_pub_prefix"])    cloud_mqtt_config_.status_pub_prefix    = node["status_pub_prefix"].as<std::string>();
+}
+
+void CloudConfigManager::ParseApi(const YAML::Node& node) {
+  if (node["auth"]) {
+    const auto& a = node["auth"];
+    if (a["jwt_secret"]) api_jwt_secret_ = a["jwt_secret"].as<std::string>();
+  }
+  if (node["session_timeout_s"])
+    session_timeout_s_ = node["session_timeout_s"].as<int>();
 }
 
 }  // namespace config

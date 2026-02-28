@@ -14,6 +14,8 @@
 
 // ======================== 阿里云 TURN 配置 ========================
 
+import logger from '@/utils/logger'
+
 /**
  * 阿里云 TURN 服务器配置
  * 实际部署时需要从后端获取临时凭证
@@ -179,7 +181,7 @@ export class WebRTCService {
     emergency?: boolean
   }): void {
     if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-      console.warn('[WebRTC] Data channel not open')
+      logger.webrtc('Data channel not open, control dropped', 'warning')
       return
     }
 
@@ -252,17 +254,17 @@ export class WebRTCService {
       this.signalingWs = new WebSocket(this.config.signalingUrl)
 
       this.signalingWs.onopen = () => {
-        console.log('[WebRTC] Signaling connected')
+        logger.webrtc('Signaling connected', 'success')
         resolve()
       }
 
       this.signalingWs.onerror = (error) => {
-        console.error('[WebRTC] Signaling error:', error)
+        logger.webrtc(`Signaling error: ${error}`, 'error')
         reject(error)
       }
 
       this.signalingWs.onclose = () => {
-        console.log('[WebRTC] Signaling disconnected')
+        logger.webrtc('Signaling disconnected', 'warning')
         if (this.state === 'connected') {
           this.setState('reconnecting')
           this.scheduleReconnect()
@@ -274,7 +276,7 @@ export class WebRTCService {
           const message = JSON.parse(event.data)
           this.handleSignalingMessage(message)
         } catch (e) {
-          console.error('[WebRTC] Failed to parse signaling message:', e)
+          logger.webrtc(`Failed to parse signaling message: ${e}`, 'error')
         }
       }
     })
@@ -298,7 +300,7 @@ export class WebRTCService {
     // ICE连接状态
     this.peerConnection.oniceconnectionstatechange = () => {
       const state = this.peerConnection?.iceConnectionState
-      console.log('[WebRTC] ICE connection state:', state)
+      logger.webrtc(`ICE connection state: ${state}`)
 
       if (state === 'connected') {
         this.setState('connected')
@@ -310,7 +312,7 @@ export class WebRTCService {
 
     // 接收视频轨道
     this.peerConnection.ontrack = (event) => {
-      console.log('[WebRTC] Received track:', event.track.kind)
+      logger.webrtc(`Received track: ${event.track.kind}`, 'success')
 
       if (event.track.kind === 'video') {
         // 从stream ID提取摄像头ID
@@ -334,11 +336,11 @@ export class WebRTCService {
     this.dataChannel = channel
 
     channel.onopen = () => {
-      console.log('[WebRTC] Data channel opened')
+      logger.webrtc('Data channel opened', 'success')
     }
 
     channel.onclose = () => {
-      console.log('[WebRTC] Data channel closed')
+      logger.webrtc('Data channel closed', 'warning')
     }
 
     channel.onmessage = (event) => {
@@ -346,7 +348,7 @@ export class WebRTCService {
         const data = JSON.parse(event.data)
         this.handleDataChannelMessage(data)
       } catch (e) {
-        console.error('[WebRTC] Failed to parse data channel message:', e)
+        logger.webrtc(`Failed to parse data channel message: ${e}`, 'error')
       }
     }
   }
@@ -366,7 +368,7 @@ export class WebRTCService {
         break
 
       case 'error':
-        console.error('[WebRTC] Signaling error:', message.message)
+        logger.webrtc(`Signaling error: ${message.message}`, 'error')
         this.setState('failed')
         break
     }
@@ -470,7 +472,7 @@ export class WebRTCService {
     setTimeout(() => {
       if (this.state === 'reconnecting') {
         this.connect().catch(e => {
-          console.error('[WebRTC] Reconnect failed:', e)
+          logger.webrtc(`Reconnect failed: ${e}`, 'error')
         })
       }
     }, 5000)
@@ -502,7 +504,7 @@ class WebRTCManager {
 
   async switchActiveVehicle(vehicleId: string): Promise<void> {
     this.activeVehicleId = vehicleId
-    console.log(`[WebRTC] Switched active vehicle to: ${vehicleId}`)
+    logger.webrtc(`Switched active vehicle to: ${vehicleId}`, 'success')
   }
 
   getActiveConnection(): WebRTCService | undefined {
@@ -764,7 +766,7 @@ export async function fetchAliyunTurnCredentials(apiUrl: string): Promise<RTCIce
     const data = await response.json()
     return data.iceServers || ALIYUN_ICE_SERVERS
   } catch (e) {
-    console.warn('[WebRTC] Failed to fetch TURN credentials, using defaults:', e)
+    logger.webrtc('Failed to fetch TURN credentials, using defaults', 'warning')
     return ALIYUN_ICE_SERVERS
   }
 }
@@ -787,7 +789,7 @@ export function useMockMultiCameraWebRTC(vehicleId: string) {
 
   const connect = async (): Promise<boolean> => {
     isConnecting.value = true
-    console.log('[MockWebRTC] Connecting to vehicle:', vehicleId)
+    logger.webrtc(`MockWebRTC connecting to vehicle: ${vehicleId}`)
 
     await new Promise(resolve => setTimeout(resolve, 1200))
 

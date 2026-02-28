@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -108,10 +109,10 @@ export function useAuthService() {
       sessionExpiresAt.value = session.expiresAt
       isAuthenticated.value = true
 
-      console.log('[Auth] Session restored for user:', session.user.username)
+      logger.info('[Auth] Session restored for user:', session.user.username, 'auth')
       return true
     } catch (error) {
-      console.error('[Auth] Failed to restore session:', error)
+      logger.error('[Auth] Failed to restore session:', error, 'auth')
       clearSession()
       return false
     }
@@ -128,7 +129,7 @@ export function useAuthService() {
         loginAttempts.value = new Map(Object.entries(attempts))
       }
     } catch (error) {
-      console.error('[Auth] Failed to load login attempts:', error)
+      logger.error('[Auth] Failed to load login attempts:', error, 'auth')
     }
   }
 
@@ -140,7 +141,7 @@ export function useAuthService() {
       const attempts = Object.fromEntries(loginAttempts.value)
       localStorage.setItem(STORAGE_KEYS.LOGIN_ATTEMPTS, JSON.stringify(attempts))
     } catch (error) {
-      console.error('[Auth] Failed to save login attempts:', error)
+      logger.error('[Auth] Failed to save login attempts:', error, 'auth')
     }
   }
 
@@ -188,7 +189,7 @@ export function useAuthService() {
     // 更新最后登录时间
     user.lastLogin = new Date().toISOString()
 
-    console.log('[Auth] Login successful:', username)
+    logger.info('[Auth] Login successful:', username, 'auth')
 
     return {
       success: true,
@@ -200,7 +201,7 @@ export function useAuthService() {
    * 用户登出
    */
   function logout() {
-    console.log('[Auth] Logging out user:', currentUser.value?.username)
+    logger.info('[Auth] Logging out user:', currentUser.value?.username, 'auth')
 
     clearSession()
 
@@ -243,7 +244,7 @@ export function useAuthService() {
     try {
       localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session))
     } catch (error) {
-      console.error('[Auth] Failed to save session:', error)
+      logger.error('[Auth] Failed to save session:', error, 'auth')
     }
   }
 
@@ -262,7 +263,7 @@ export function useAuthService() {
     if (!isAuthenticated.value || !sessionExpiresAt.value) return
 
     if (Date.now() > sessionExpiresAt.value) {
-      console.log('[Auth] Session expired')
+      logger.info('[Auth] Session expired', 'auth')
       logout()
     }
   }
@@ -279,7 +280,7 @@ export function useAuthService() {
     sessionToken.value = session.token
     sessionExpiresAt.value = session.expiresAt
 
-    console.log('[Auth] Session refreshed')
+    logger.info('[Auth] Session refreshed', 'auth')
     return true
   }
 
@@ -335,7 +336,7 @@ export function useAuthService() {
     // 检查是否需要锁定账户
     if (attempt.attempts >= SESSION_CONFIG.MAX_LOGIN_ATTEMPTS) {
       attempt.lockedUntil = now + SESSION_CONFIG.LOCKOUT_DURATION
-      console.warn(`[Auth] Account locked due to too many failed attempts: ${username}`)
+      logger.warn(`[Auth] Account locked due to too many failed attempts: ${username}`, 'auth')
     }
 
     saveLoginAttempts()

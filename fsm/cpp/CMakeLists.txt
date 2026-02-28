@@ -1,5 +1,24 @@
 cmake_minimum_required(VERSION 3.16)
-project(fsm_pilot VERSION 1.1.0 LANGUAGES CXX)
+project(fsm_pilot VERSION 1.2.0 LANGUAGES CXX)
+
+# =============================================================================
+# Build variant options
+#   FSM_DEMO_MODE     — link SimulatedVehicle instead of real hardware drivers
+#   FSM_DEBUG_VERBOSE — enable per-vehicle verbose debug logging
+# =============================================================================
+option(FSM_DEMO_MODE     "Build with simulated vehicle (no real hardware)" OFF)
+option(FSM_DEBUG_VERBOSE "Enable verbose debug logging per vehicle"        OFF)
+
+if(FSM_DEMO_MODE)
+  message(STATUS "FSM-Pilot: BUILD VARIANT = DEMO (simulated vehicle)")
+  add_definitions(-DFSM_DEMO_MODE)
+else()
+  message(STATUS "FSM-Pilot: BUILD VARIANT = PRODUCTION (real hardware)")
+endif()
+
+if(FSM_DEBUG_VERBOSE)
+  add_definitions(-DFSM_DEBUG_VERBOSE)
+endif()
 
 # C++17 标准
 set(CMAKE_CXX_STANDARD 17)
@@ -124,6 +143,9 @@ add_library(fsm_common SHARED
   common/src/logger.cpp
   common/src/utils.cpp
   common/src/message_types.cpp
+  common/src/audit_logger.cpp
+  common/src/safety_monitor.cpp
+  common/src/diagnostics.cpp
   ${PROTO_SRCS}
 )
 target_link_libraries(fsm_common

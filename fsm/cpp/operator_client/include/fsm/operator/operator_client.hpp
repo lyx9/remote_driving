@@ -1,172 +1,126 @@
-/**
- * FSM-Pilot 操作端客户端头文件
- */
-
 #pragma once
 
 #include "fsm/operator/wheel_controller.hpp"
-#include <string>
-#include <memory>
-#include <thread>
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
 
 namespace fsm {
 namespace operator_client {
 
-/**
- * 操作端配置
- */
 struct OperatorConfig {
-    std::string signaling_url;
-    int input_poll_interval_ms = 10;
-    float steering_deadzone = 0.02f;
-    std::string steering_curve = "linear";
-    float force_feedback_strength = 0.5f;
+  std::string signaling_url;
+  int   input_poll_interval_ms  = 10;
+  float steering_deadzone       = 0.02f;
+  std::string steering_curve    = "linear";
+  float force_feedback_strength = 0.5f;
+  int reconnect_interval_ms     = 5000;
 };
 
-/**
- * 控制指令
- */
 struct ControlCommand {
-    int64_t timestamp;
-    float steering;
-    float throttle;
-    float brake;
-    int gear;
-    int turn_signal;
-    bool emergency;
+  int64_t  timestamp_ns = 0;
+  float    steering     = 0.0f;   // -1.0 to 1.0
+  float    throttle     = 0.0f;   //  0.0 to 1.0
+  float    brake        = 0.0f;   //  0.0 to 1.0
+  int      gear         = 3;      // 0=P,1=R,2=N,3=D
+  int      turn_signal  = 0;
+  bool     emergency    = false;
+  uint64_t sequence     = 0;
 };
 
-/**
- * 遥测数据
- */
 struct TelemetryData {
-    double speed;
-    double steering_angle;
-    int gear;
-    double latitude;
-    double longitude;
-    double heading;
-    int battery_level;
-    int64_t timestamp;
+  double  speed_mps    = 0.0;
+  double  steering_rad = 0.0;
+  int     gear         = 0;
+  double  latitude     = 0.0;
+  double  longitude    = 0.0;
+  double  heading_rad  = 0.0;
+  int     battery_pct  = 0;
+  float   latency_ms   = 0.0f;
+  int64_t timestamp_ns = 0;
 };
 
-/**
- * 视频帧
- */
 struct VideoFrame {
-    std::string camera_id;
-    std::vector<uint8_t> data;
-    int width;
-    int height;
-    int64_t timestamp;
+  std::string          camera_id;
+  std::vector<uint8_t> data;       // JPEG bytes
+  int64_t              timestamp_ns = 0;
+  uint64_t             frame_number = 0;
 };
 
-/**
- * 操作端状态
- */
 struct OperatorStatus {
-    bool connected;
-    std::string vehicle_id;
-    bool wheel_connected;
-    int current_gear;
-    int turn_signal;
+  bool        connected      = false;
+  bool        vehicle_ready  = false;
+  std::string vehicle_id;
+  bool        wheel_connected = false;
+  int         current_gear   = 3;
+  int         turn_signal    = 0;
+  float       latency_ms     = 0.0f;
 };
 
-// 回调类型
-using ControlCallback = std::function<void(const ControlCommand&)>;
+using ControlCallback   = std::function<void(const ControlCommand&)>;
 using TelemetryCallback = std::function<void(const TelemetryData&)>;
-using VideoCallback = std::function<void(const VideoFrame&)>;
+using VideoCallback     = std::function<void(const VideoFrame&)>;
 
-/**
- * 操作端客户端
- * 整合方向盘输入和远程通信
- */
 class OperatorClient {
-public:
-    explicit OperatorClient(const OperatorConfig& config);
-    ~OperatorClient();
+ public:
+  explicit OperatorClient(const OperatorConfig& config);
+  ~OperatorClient();
 
-    /**
-     * 初始化客户端
-     */
-    bool initialize();
+  OperatorClient(const OperatorClient&) = delete;
+  OperatorClient& operator=(const OperatorClient&) = delete;
 
-    /**
-     * 启动输入处理
-     */
-    void start();
+  [[nodiscard]] bool Initialize();
+  void Start();
+  void Stop();
 
-    /**
-     * 停止客户端
-     */
-    void stop();
+  // Connect to a specific vehicle via the signaling server.
+  [[nodiscard]] bool Connect(const std::string& vehicle_id);
+  void Disconnect();
 
-    /**
-     * 连接到车辆
-     */
-    bool connect(const std::string& vehicle_id);
+  void set_control_callback(ControlCallback cb);
+  void set_telemetry_callback(TelemetryCallback cb);
+  void set_video_callback(VideoCallback cb);
 
-    /**
-     * 断开连接
-     */
-    void disconnect();
+  void TriggerEmergencyStop();
+  OperatorStatus GetStatus() const;
 
-    /**
-     * 设置控制指令回调
-     */
-    void setControlCallback(ControlCallback callback);
+ private:
+  void InputLoop();
+  void ProcessWheelInput();
+  void SendControlCommand(const ControlCommand& cmd);
 
-    /**
-     * 设置遥测数据回调
-     */
-    void setTelemetryCallback(TelemetryCallback callback);
+  static float ApplyDeadzone(float value, float deadzone);
+  static float ApplyCurve(float value, const std::string& curve);
 
-    /**
-     * 设置视频帧回调
-     */
-    void setVideoCallback(VideoCallback callback);
+  void ShiftGearUp();
+  void ShiftGearDown();
+  static const char* GearName(int gear);
 
-    /**
-     * 触发紧急停车
-     */
-    void triggerEmergencyStop();
+  OperatorConfig                   config_;
+  std::unique_ptr<WheelController> wheel_controller_;
 
-    /**
-     * 获取状态
-     */
-    OperatorStatus getStatus() const;
+  std::thread       input_thread_;
+  std::atomic<bool> running_{false};
 
-private:
-    void inputLoop();
-    void processWheelInput();
-    void sendControlCommand(const ControlCommand& cmd);
+  // WebSocket implementation (Pimpl)
+  class WsImpl;
+  std::unique_ptr<WsImpl> ws_;
 
-    float applyDeadzone(float value, float deadzone);
-    float applyCurve(float value, const std::string& curve);
+  std::string current_vehicle_id_;
+  int         current_gear_  = 3;
+  int         turn_signal_   = 0;
+  WheelInput  last_input_;
+  uint64_t    cmd_seq_       = 0;
 
-    void shiftGearUp();
-    void shiftGearDown();
-    std::string getGearName(int gear);
-
-private:
-    OperatorConfig config_;
-    std::unique_ptr<WheelController> wheel_controller_;
-
-    std::thread input_thread_;
-    std::atomic<bool> running_;
-
-    std::string current_vehicle_id_;
-    bool webrtc_connected_ = false;
-
-    int current_gear_;
-    int turn_signal_;
-    WheelInput last_input_;
-
-    ControlCallback control_callback_;
-    TelemetryCallback telemetry_callback_;
-    VideoCallback video_callback_;
+  ControlCallback   control_cb_;
+  TelemetryCallback telemetry_cb_;
+  VideoCallback     video_cb_;
 };
 
 }  // namespace operator_client

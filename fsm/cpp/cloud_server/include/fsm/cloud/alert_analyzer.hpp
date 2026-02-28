@@ -1,143 +1,99 @@
-/**
- * FSM-Pilot 告警分析器头文件
- */
-
 #pragma once
 
-#include "fsm/config_manager.hpp"
+#include <cstdint>
+#include <functional>
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
-#include <functional>
+
 #include <nlohmann/json.hpp>
+#include "fsm/config_manager.hpp"
 
 namespace fsm {
 namespace cloud {
 
-/**
- * 告警严重级别
- */
 enum class AlertSeverity {
-    INFO,
-    WARNING,
-    CRITICAL
+  kInfo,
+  kWarning,
+  kCritical,
 };
 
-/**
- * 车辆状态 (用于告警分析)
- */
-struct VehicleState {
-    double latency_ms = 0;
-    int battery_level = 100;
-    bool emergency_active = false;
-    int cameras_online = 0;
-    int cameras_total = 0;
-    bool lidar_online = true;
-    bool gps_fix = true;
-    double cpu_usage = 0;
-    double gpu_usage = 0;
-    double memory_usage = 0;
-    int64_t last_update_time = 0;
+struct VehicleHealthSnapshot {
+  double latency_ms = 0.0;
+  int battery_pct = 100;
+  bool emergency_active = false;
+  int cameras_online = 0;
+  int cameras_total = 0;
+  bool lidar_online = true;
+  bool gps_fix = true;
+  double cpu_usage = 0.0;
+  double gpu_usage = 0.0;
+  double memory_usage = 0.0;
+  int64_t last_update_ns = 0;
 };
 
-/**
- * 告警信息
- */
 struct Alert {
-    std::string id;
-    std::string vehicle_id;
-    std::string type;
-    AlertSeverity severity;
-    std::string message;
-    int64_t timestamp;
-    bool acknowledged = false;
-    bool resolved = false;
-    int64_t resolved_time = 0;
-    nlohmann::json details;
+  std::string id;
+  std::string vehicle_id;
+  std::string type;
+  AlertSeverity severity = AlertSeverity::kInfo;
+  std::string message;
+  int64_t timestamp_ns = 0;
+  bool acknowledged = false;
+  bool resolved = false;
+  int64_t resolved_ns = 0;
+  nlohmann::json details;
 };
 
-/**
- * 告警规则
- */
-struct AlertRule {
-    std::string name;
-    std::function<bool(const VehicleState&)> condition;
-    AlertSeverity severity;
-    std::string message;
-};
-
-/**
- * 告警统计
- */
 struct AlertStatistics {
-    size_t total_alerts;
-    size_t critical_count;
-    size_t warning_count;
-    size_t info_count;
-    size_t acknowledged_count;
+  size_t total = 0;
+  size_t critical = 0;
+  size_t warning = 0;
+  size_t info = 0;
+  size_t acknowledged = 0;
 };
 
 using AlertCallback = std::function<void(const Alert&)>;
 
-/**
- * 告警分析器
- * 分析车辆状态并生成告警
- */
 class AlertAnalyzer {
-public:
-    explicit AlertAnalyzer(const config::CloudConfigManager& config);
+ public:
+  explicit AlertAnalyzer(const config::CloudConfigManager& config);
 
-    /**
-     * 分析车辆状态，返回新生成的告警
-     */
-    std::vector<Alert> analyze(const std::string& vehicle_id, const VehicleState& state);
+  AlertAnalyzer(const AlertAnalyzer&) = delete;
+  AlertAnalyzer& operator=(const AlertAnalyzer&) = delete;
 
-    /**
-     * 获取所有活动告警
-     */
-    std::vector<Alert> getActiveAlerts() const;
+  // Evaluates rules against the snapshot and returns newly triggered alerts.
+  std::vector<Alert> Analyze(const std::string& vehicle_id,
+                              const VehicleHealthSnapshot& snapshot);
 
-    /**
-     * 获取指定车辆的活动告警
-     */
-    std::vector<Alert> getActiveAlertsForVehicle(const std::string& vehicle_id) const;
+  std::vector<Alert> GetActiveAlerts() const;
+  std::vector<Alert> GetActiveAlertsForVehicle(const std::string& vehicle_id) const;
 
-    /**
-     * 确认告警
-     */
-    bool acknowledgeAlert(const std::string& alert_id);
+  bool AcknowledgeAlert(const std::string& alert_id);
+  void ClearAlertsForVehicle(const std::string& vehicle_id);
 
-    /**
-     * 清除车辆的所有告警
-     */
-    void clearAlertsForVehicle(const std::string& vehicle_id);
+  void set_alert_callback(AlertCallback cb);
+  void set_resolved_callback(AlertCallback cb);
 
-    /**
-     * 注册告警回调
-     */
-    void onAlert(AlertCallback callback);
+  AlertStatistics GetStatistics() const;
 
-    /**
-     * 注册告警恢复回调
-     */
-    void onAlertResolved(AlertCallback callback);
+ private:
+  struct AlertRule {
+    std::string name;
+    std::function<bool(const VehicleHealthSnapshot&)> condition;
+    AlertSeverity severity;
+    std::string message;
+  };
 
-    /**
-     * 获取告警统计
-     */
-    AlertStatistics getStatistics() const;
+  void LoadRules();
 
-private:
-    void loadAlertRules();
+  const config::CloudConfigManager& config_;
+  std::vector<AlertRule> rules_;
+  std::map<std::string, Alert> active_alerts_;  // key: vehicle_id + "_" + type
+  uint64_t id_counter_ = 0;
 
-private:
-    const config::CloudConfigManager& config_;
-    std::vector<AlertRule> rules_;
-    std::map<std::string, Alert> active_alerts_;  // key: vehicle_id + "_" + alert_type
-    uint64_t alert_id_counter_;
-
-    AlertCallback alert_callback_;
-    AlertCallback resolved_callback_;
+  AlertCallback alert_cb_;
+  AlertCallback resolved_cb_;
 };
 
 }  // namespace cloud

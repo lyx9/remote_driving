@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -466,7 +467,7 @@ export function useRosBagPlayer() {
       // 初始化起始位置
       startPosition = { x: Math.random() * 100, y: Math.random() * 100 }
 
-      console.log(`[RosBag] Loaded: ${bagInfo.name}`)
+      logger.info(`[RosBag] Loaded: ${bagInfo.name}`, 'ros')
       isLoading.value = false
       return true
     } catch (e) {

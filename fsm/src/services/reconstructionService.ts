@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * Guardian Mobility v0.0 - 3DGS Reconstruction Service
  *
@@ -76,7 +77,7 @@ class ReconstructionService {
       const result = await response.json()
       return result
     } catch (error) {
-      console.error('[Reconstruction] 启动失败:', error)
+      logger.error('[Reconstruction] 启动失败:', error, 'system')
       throw error
     }
   }
@@ -96,7 +97,7 @@ class ReconstructionService {
     this.ws = new WebSocket(wsUrl)
 
     this.ws.onopen = () => {
-      console.log('[Reconstruction] WebSocket连接成功')
+      logger.info('[Reconstruction] WebSocket连接成功', 'system')
     }
 
     this.ws.onmessage = (event) => {
@@ -109,16 +110,16 @@ class ReconstructionService {
           this.logCallback(data.data)
         }
       } catch (error) {
-        console.error('[Reconstruction] 解析消息失败:', error)
+        logger.error('[Reconstruction] 解析消息失败:', error, 'system')
       }
     }
 
     this.ws.onerror = (error) => {
-      console.error('[Reconstruction] WebSocket错误:', error)
+      logger.error('[Reconstruction] WebSocket错误:', error, 'system')
     }
 
     this.ws.onclose = () => {
-      console.log('[Reconstruction] WebSocket连接关闭')
+      logger.info('[Reconstruction] WebSocket连接关闭', 'system')
     }
   }
 
@@ -147,7 +148,7 @@ class ReconstructionService {
 
       return await response.json()
     } catch (error) {
-      console.error('[Reconstruction] 获取状态失败:', error)
+      logger.error('[Reconstruction] 获取状态失败:', error, 'system')
       throw error
     }
   }
@@ -165,7 +166,7 @@ class ReconstructionService {
 
       return await response.json()
     } catch (error) {
-      console.error('[Reconstruction] 获取结果失败:', error)
+      logger.error('[Reconstruction] 获取结果失败:', error, 'system')
       throw error
     }
   }
@@ -183,7 +184,7 @@ class ReconstructionService {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
     } catch (error) {
-      console.error('[Reconstruction] 取消失败:', error)
+      logger.error('[Reconstruction] 取消失败:', error, 'system')
       throw error
     }
   }
@@ -201,7 +202,7 @@ class ReconstructionService {
 
       return await response.json()
     } catch (error) {
-      console.error('[Reconstruction] 获取历史失败:', error)
+      logger.error('[Reconstruction] 获取历史失败:', error, 'system')
       throw error
     }
   }
@@ -219,7 +220,7 @@ class ReconstructionService {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
     } catch (error) {
-      console.error('[Reconstruction] 删除失败:', error)
+      logger.error('[Reconstruction] 删除失败:', error, 'system')
       throw error
     }
   }
@@ -262,7 +263,7 @@ class ReconstructionService {
         xhr.send(formData)
       })
     } catch (error) {
-      console.error('[Reconstruction] 上传失败:', error)
+      logger.error('[Reconstruction] 上传失败:', error, 'system')
       throw error
     }
   }
@@ -285,7 +286,7 @@ class ReconstructionService {
 
       return await response.json()
     } catch (error) {
-      console.error('[Reconstruction] 检查依赖失败:', error)
+      logger.error('[Reconstruction] 检查依赖失败:', error, 'system')
       throw error
     }
   }

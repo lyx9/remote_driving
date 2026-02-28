@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -252,7 +253,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
    */
   async function connect(vehicleId: string): Promise<boolean> {
     if (connectionState.status === 'connected' || connectionState.status === 'connecting') {
-      console.warn('[RemoteControl] Already connected or connecting')
+      logger.warn('[RemoteControl] Already connected or connecting', 'webrtc')
       return false
     }
 
@@ -287,7 +288,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
       const errorMsg = `连接失败: ${error}`
       connectionState.status = 'failed'
       connectionState.lastError = errorMsg
-      console.error('[RemoteControl]', errorMsg)
+      logger.error('[RemoteControl]', errorMsg, 'webrtc')
       return false
     }
   }
@@ -299,7 +300,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
     cleanup()
     connectionState.status = 'disconnected'
     connectionState.vehicleId = null
-    console.log('[RemoteControl] Disconnected')
+    logger.info('[RemoteControl] Disconnected', 'webrtc')
   }
 
   /**
@@ -307,7 +308,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
    */
   function sendControl(command: Partial<ControlCommand>): void {
     if (!isControlEnabled.value) {
-      console.warn('[RemoteControl] Control not enabled')
+      logger.warn('[RemoteControl] Control not enabled', 'webrtc')
       return
     }
 
@@ -335,7 +336,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
    */
   function enableControl(): void {
     if (!connectionState.dataChannelOpen) {
-      console.warn('[RemoteControl] Data channel not open')
+      logger.warn('[RemoteControl] Data channel not open', 'webrtc')
       return
     }
 
@@ -402,7 +403,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
       signalingWs.onopen = () => {
         clearTimeout(timeout)
         connectionState.signalingConnected = true
-        console.log('[RemoteControl] Signaling connected')
+        logger.info('[RemoteControl] Signaling connected', 'webrtc')
         resolve()
       }
 
@@ -414,7 +415,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
 
       signalingWs.onclose = (event) => {
         connectionState.signalingConnected = false
-        console.log('[RemoteControl] Signaling closed:', event.code, event.reason)
+        logger.info('[RemoteControl] Signaling closed:', event.code, event.reason, 'webrtc')
 
         if (connectionState.status === 'connected') {
           scheduleReconnect()
@@ -426,7 +427,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
           const message = JSON.parse(event.data)
           handleSignalingMessage(message)
         } catch (e) {
-          console.error('[RemoteControl] Failed to parse signaling message:', e)
+          logger.error('[RemoteControl] Failed to parse signaling message:', e, 'webrtc')
         }
       }
     })
@@ -436,7 +437,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
     if (signalingWs && signalingWs.readyState === WebSocket.OPEN) {
       signalingWs.send(JSON.stringify(message))
     } else {
-      console.warn('[RemoteControl] Signaling not connected')
+      logger.warn('[RemoteControl] Signaling not connected', 'webrtc')
     }
   }
 
@@ -452,10 +453,10 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
         handleIceCandidate(message.candidate)
         break
       case 'vehicle_ready':
-        console.log('[RemoteControl] Vehicle ready for connection')
+        logger.info('[RemoteControl] Vehicle ready for connection', 'webrtc')
         break
       case 'error':
-        console.error('[RemoteControl] Signaling error:', message.message)
+        logger.error('[RemoteControl] Signaling error:', message.message, 'webrtc')
         connectionState.lastError = message.message
         break
     }
@@ -477,7 +478,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
 
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection?.iceConnectionState
-      console.log('[RemoteControl] ICE state:', state)
+      logger.info('[RemoteControl] ICE state:', state, 'webrtc')
 
       if (state === 'connected') {
         connectionState.webrtcConnected = true
@@ -496,7 +497,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
       if (event.track.kind === 'video' && event.streams[0]) {
         const streamId = event.streams[0].id
         const cameraId = extractCameraId(streamId)
-        console.log('[RemoteControl] Received video stream:', cameraId)
+        logger.info('[RemoteControl] Received video stream:', cameraId, 'webrtc')
         videoStreamCallbacks.forEach(cb => cb(event.streams[0], cameraId))
       }
     }
@@ -536,13 +537,13 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
 
     channel.onopen = () => {
       connectionState.dataChannelOpen = true
-      console.log('[RemoteControl] Data channel opened')
+      logger.info('[RemoteControl] Data channel opened', 'webrtc')
     }
 
     channel.onclose = () => {
       connectionState.dataChannelOpen = false
       isControlEnabled.value = false
-      console.log('[RemoteControl] Data channel closed')
+      logger.info('[RemoteControl] Data channel closed', 'webrtc')
     }
 
     channel.onmessage = (event) => {
@@ -550,7 +551,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
         const data = JSON.parse(event.data)
         handleDataChannelMessage(data)
       } catch (e) {
-        console.error('[RemoteControl] Failed to parse data channel message:', e)
+        logger.error('[RemoteControl] Failed to parse data channel message:', e, 'webrtc')
       }
     }
   }
@@ -573,7 +574,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
         handleControlAck(data)
         break
       case 'system_status':
-        console.log('[RemoteControl] System status:', data)
+        logger.info('[RemoteControl] System status:', data, 'webrtc')
         break
     }
   }
@@ -605,7 +606,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
       latencyStats.controlLatency = controlLatency
 
       if (!ack.applied) {
-        console.warn('[RemoteControl] Command not applied:', ack.error)
+        logger.warn('[RemoteControl] Command not applied:', ack.error, 'webrtc')
       }
     }
   }
@@ -644,7 +645,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
       if (oldest) {
         clearTimeout(oldest.timeout)
         pendingCommands.delete(oldestSeq)
-        console.warn('[RemoteControl] Dropped unacked command:', oldestSeq)
+        logger.warn('[RemoteControl] Dropped unacked command:', oldestSeq, 'webrtc')
       }
     }
 
@@ -658,7 +659,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
     const timeout = setTimeout(() => {
       if (pendingCommands.has(command.seq)) {
         pendingCommands.delete(command.seq)
-        console.warn('[RemoteControl] Command timeout:', command.seq)
+        logger.warn('[RemoteControl] Command timeout:', command.seq, 'webrtc')
       }
     }, finalConfig.control.ackTimeoutMs)
 
@@ -736,7 +737,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
     if (connectionState.reconnectAttempt >= finalConfig.reconnect.maxAttempts) {
       connectionState.status = 'failed'
       connectionState.lastError = '重连次数超过上限'
-      console.error('[RemoteControl] Max reconnect attempts reached')
+      logger.error('[RemoteControl] Max reconnect attempts reached', 'webrtc')
       return
     }
 
@@ -749,7 +750,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
       finalConfig.reconnect.maxDelayMs
     )
 
-    console.log(`[RemoteControl] Reconnecting in ${Math.round(delay)}ms (attempt ${connectionState.reconnectAttempt})`)
+    logger.info(`[RemoteControl] Reconnecting in ${Math.round(delay)}ms (attempt ${connectionState.reconnectAttempt})`, 'webrtc')
 
     reconnectTimeout = setTimeout(async () => {
       if (connectionState.vehicleId) {
@@ -757,7 +758,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
         try {
           await connect(connectionState.vehicleId)
         } catch (e) {
-          console.error('[RemoteControl] Reconnect failed:', e)
+          logger.error('[RemoteControl] Reconnect failed:', e, 'webrtc')
           scheduleReconnect()
         }
       }
@@ -781,7 +782,7 @@ export function useRemoteControlOptimized(config: Partial<RemoteControlConfig> =
       const data = await response.json()
       return data.iceServers || finalConfig.iceServers as RTCIceServer[]
     } catch (e) {
-      console.warn('[RemoteControl] Failed to fetch TURN credentials:', e)
+      logger.warn('[RemoteControl] Failed to fetch TURN credentials:', e, 'webrtc')
       return finalConfig.iceServers as RTCIceServer[]
     }
   }

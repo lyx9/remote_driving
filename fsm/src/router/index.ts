@@ -41,6 +41,16 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/mqtt-remote-control',
+    name: 'MQTTRemoteControl',
+    component: () => import('@/components/MQTTRemoteControl.vue'),
+    meta: {
+      requiresAuth: true,
+      permissions: ['vehicle:control'],
+      title: 'MQTT Remote Control - FSM-Pilot'
+    }
+  },
+  {
     path: '/rosbag-replay-pro',
     name: 'RosBagReplayPro',
     component: () => import('@/components/RosBagReplayPro.vue'),

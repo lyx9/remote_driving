@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Predictive Handover Service
  *
@@ -293,7 +294,7 @@ class PredictiveHandoverService {
       this.runPredictionCycle()
     }, intervalMs)
 
-    console.log(`Predictive handover monitoring started (interval: ${intervalMs}ms)`)
+    logger.info(`Predictive handover monitoring started (interval: ${intervalMs}ms)`, 'vehicle')
   }
 
   /**
@@ -303,7 +304,7 @@ class PredictiveHandoverService {
     if (this.predictionInterval) {
       clearInterval(this.predictionInterval)
       this.predictionInterval = null
-      console.log('Predictive handover monitoring stopped')
+      logger.info('Predictive handover monitoring stopped', 'vehicle')
     }
   }
 
@@ -355,9 +356,9 @@ class PredictiveHandoverService {
     const connectionState = this.connectionStates.get(vehicleId)
     if (!connectionState) return
 
-    console.log(`[Predictive Handover] Pre-connecting for vehicle ${vehicleId}`)
-    console.log(`  Predicted disengagement in ${(prediction.predictedDisengagementTime / 1000).toFixed(1)}s`)
-    console.log(`  Factors: ${prediction.triggerFactors.join(', ')}`)
+    logger.info(`[Predictive Handover] Pre-connecting for vehicle ${vehicleId}`, 'vehicle')
+    logger.info(`  Predicted disengagement in ${(prediction.predictedDisengagementTime / 1000).toFixed(1)}s`, 'vehicle')
+    logger.info(`  Factors: ${prediction.triggerFactors.join(', ')}`, 'vehicle')
 
     connectionState.status = 'pre-connecting'
     connectionState.setupStartTime = Date.now()
@@ -370,7 +371,7 @@ class PredictiveHandoverService {
         connectionState.connectionQuality = 0.9
 
         const setupDuration = connectionState.readyTime - (connectionState.setupStartTime || 0)
-        console.log(`[Predictive Handover] Connection ready for ${vehicleId} (setup: ${setupDuration}ms)`)
+        logger.info(`[Predictive Handover] Connection ready for ${vehicleId} (setup: ${setupDuration}ms)`, 'vehicle')
       }
     }, prediction.connectionSetupTime)
   }
@@ -382,12 +383,12 @@ class PredictiveHandoverService {
     const connectionState = this.connectionStates.get(vehicleId)
 
     if (!connectionState) {
-      console.error(`No connection state for vehicle ${vehicleId}`)
+      logger.error(`No connection state for vehicle ${vehicleId}`, 'vehicle')
       return false
     }
 
     if (connectionState.status !== 'ready') {
-      console.warn(`Connection not ready for vehicle ${vehicleId} (status: ${connectionState.status})`)
+      logger.warn(`Connection not ready for vehicle ${vehicleId} (status: ${connectionState.status})`, 'vehicle')
       return false
     }
 
@@ -396,8 +397,8 @@ class PredictiveHandoverService {
     connectionState.activationTime = Date.now()
 
     const handoverLatency = connectionState.activationTime - (connectionState.setupStartTime || 0)
-    console.log(`[Predictive Handover] Connection activated for ${vehicleId} → ${operatorId}`)
-    console.log(`  Total handover latency: ${handoverLatency}ms`)
+    logger.info(`[Predictive Handover] Connection activated for ${vehicleId} → ${operatorId}`, 'vehicle')
+    logger.info(`  Total handover latency: ${handoverLatency}ms`, 'vehicle')
 
     return true
   }

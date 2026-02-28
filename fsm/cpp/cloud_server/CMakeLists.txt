@@ -2,16 +2,24 @@
 
 cmake_minimum_required(VERSION 3.16)
 
+# libmosquitto (for MQTT relay)
+find_library(MOSQUITTO_LIB mosquitto REQUIRED)
+find_path(MOSQUITTO_INCLUDE_DIR mosquitto.h REQUIRED)
+
 # 云端服务器库
 add_library(fsm_cloud_lib STATIC
   src/scheduling_service.cpp
   src/signaling_server.cpp
   src/alert_analyzer.cpp
   src/prediction_interface.cpp
+  src/rest_api_server.cpp
+  src/mqtt_relay.cpp
+  src/session_manager.cpp
 )
 
 target_include_directories(fsm_cloud_lib PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${MOSQUITTO_INCLUDE_DIR}
 )
 
 target_link_libraries(fsm_cloud_lib PUBLIC
@@ -22,6 +30,7 @@ target_link_libraries(fsm_cloud_lib PUBLIC
   OpenSSL::SSL
   OpenSSL::Crypto
   Threads::Threads
+  ${MOSQUITTO_LIB}
 )
 
 # 云端服务器可执行文件

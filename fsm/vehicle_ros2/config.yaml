@@ -1,0 +1,36 @@
+# FSM-Pilot 车端配置
+# 部署到 Autoware 小车上，修改以下参数
+
+vehicle:
+  id: "FSM-01"              # 车辆唯一ID，与前端一致
+  max_steer_rad: 0.5        # 最大转向角 (弧度)
+  max_accel: 3.0            # 最大加速度 m/s²
+  max_decel: -5.0           # 最大减速度 m/s²
+  max_speed_mps: 10.0       # 最大速度 m/s
+
+# 阿里云 IoT MQTT 配置
+# 从阿里云控制台获取: https://iot.console.aliyun.com
+aliyun:
+  host: "xxxxxxxx.iot-as-mqtt.cn-shanghai.aliyuncs.com"  # 替换为你的 endpoint
+  port: 8883                # TLS 端口
+  tls: true
+  ca_cert: null             # null = 使用系统 CA
+
+  # 设备三元组 (从阿里云控制台创建设备后获取)
+  product_key: "YOUR_PRODUCT_KEY"
+  device_name: "FSM-01"
+  device_secret: "YOUR_DEVICE_SECRET"
+
+  # MQTT 认证 (阿里云格式)
+  # client_id = "{clientId}|securemode=3,signmethod=hmacsha256,timestamp={ts}|"
+  # username  = "{deviceName}&{productKey}"
+  # password  = HMAC-SHA256(deviceSecret, "clientId{clientId}deviceName{deviceName}productKey{productKey}timestamp{ts}")
+  # 使用下方脚本自动生成: python3 gen_auth.py
+  client_id: "FSM-01|securemode=3,signmethod=hmacsha256,timestamp=1700000000|"
+  username: "FSM-01&YOUR_PRODUCT_KEY"
+  password: "YOUR_GENERATED_PASSWORD"
+
+camera:
+  jpeg_quality: 60          # JPEG 质量 1-100 (越低带宽越小)
+  max_width: 640            # 最大宽度 (像素)，超过则缩放
+  fps: 10                   # 每路摄像头发布帧率

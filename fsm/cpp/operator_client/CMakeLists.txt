@@ -15,6 +15,9 @@ target_include_directories(fsm_operator_lib PUBLIC
 target_link_libraries(fsm_operator_lib PUBLIC
   fsm_common
   nlohmann_json::nlohmann_json
+  ${Boost_LIBRARIES}
+  OpenSSL::SSL
+  OpenSSL::Crypto
   Threads::Threads
 )
 

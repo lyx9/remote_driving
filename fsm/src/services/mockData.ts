@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -73,7 +74,7 @@ export function useMockData() {
       }
 
       ws.onerror = (error) => {
-        console.error('[Mock] WebSocket error:', error)
+        logger.error('[Mock] WebSocket error:', error, 'system')
         systemStore.addLog('Mock server connection error', 'error')
       }
 
@@ -82,7 +83,7 @@ export function useMockData() {
       }
 
     } catch (error) {
-      console.error('[Mock] Connection error:', error)
+      logger.error('[Mock] Connection error:', error, 'system')
       systemStore.addLog(`Mock connection failed: ${error}`, 'error')
       scheduleReconnect()
     }
@@ -111,7 +112,7 @@ export function useMockData() {
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null
       if (!isConnected.value) {
-        console.log('[Mock] Attempting reconnect...')
+        logger.info('[Mock] Attempting reconnect...', 'system')
         connect()
       }
     }, MOCK_CONFIG.RECONNECT_INTERVAL)

@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Doubao LLM Service
  *
@@ -94,7 +95,7 @@ class DoubaoLLMService {
 
     // Check if Doubao is configured
     if (!this.isAvailable()) {
-      console.warn('[Doubao] LLM not configured, using fallback analysis')
+      logger.warn('[Doubao] LLM not configured, using fallback analysis', 'system')
       return this.generateFallbackAnalysis(context, startTime)
     }
 
@@ -102,7 +103,7 @@ class DoubaoLLMService {
     const cacheKey = this.getCacheKey(context)
     const cached = this.requestCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < this.cacheExpiration) {
-      console.log('[Doubao] Using cached analysis')
+      logger.info('[Doubao] Using cached analysis', 'system')
       return cached
     }
 
@@ -116,7 +117,7 @@ class DoubaoLLMService {
 
       return analysis
     } catch (error) {
-      console.error('[Doubao] API call failed:', error)
+      logger.error('[Doubao] API call failed:', error, 'system')
       return this.generateFallbackAnalysis(context, startTime)
     }
   }
@@ -230,7 +231,7 @@ class DoubaoLLMService {
         }
       }
     } catch (error) {
-      console.warn('[Doubao] Failed to parse JSON response, using fallback')
+      logger.warn('[Doubao] Failed to parse JSON response, using fallback', 'system')
     }
 
     // Fallback: use plain text parsing

@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Bipartite Matching Service
  *
@@ -206,7 +207,7 @@ class BipartiteMatchingService {
     // Find vehicle's shard
     const vehicleShard = this.findShard(request.location)
     if (!vehicleShard) {
-      console.warn('Vehicle location outside known shards')
+      logger.warn('Vehicle location outside known shards', 'vehicle')
       return null
     }
 
@@ -214,7 +215,7 @@ class BipartiteMatchingService {
     const candidateOperators = this.getCandidateOperators(vehicleShard)
 
     if (candidateOperators.length === 0) {
-      console.warn('No available operators in region')
+      logger.warn('No available operators in region', 'vehicle')
       return null
     }
 

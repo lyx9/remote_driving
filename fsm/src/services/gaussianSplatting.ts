@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -606,12 +607,12 @@ export function use3DGaussianSplatting() {
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
       isInitialized.value = true
-      console.log('[3D-GS] Initialized successfully')
+      logger.info('[3D-GS] Initialized successfully', 'camera')
 
       return true
     } catch (e) {
       error.value = `Initialization failed: ${e}`
-      console.error('[3D-GS]', e)
+      logger.error('[3D-GS]', e, 'camera')
       return false
     }
   }
@@ -651,7 +652,7 @@ export function use3DGaussianSplatting() {
         center[2] + size * 0.8
       ]
 
-      console.log(`[3D-GS] Loaded splat: ${splat.name} with ${splat.pointCount} points`)
+      logger.info(`[3D-GS] Loaded splat: ${splat.name} with ${splat.pointCount} points`, 'camera')
 
       isLoading.value = false
       return true

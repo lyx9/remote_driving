@@ -11,6 +11,14 @@ find_package(nav_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
+find_package(nlohmann_json REQUIRED)
+
+# libmosquitto (for MQTT bridge)
+find_library(MOSQUITTO_LIB mosquitto REQUIRED)
+find_path(MOSQUITTO_INCLUDE_DIR mosquitto.h REQUIRED)
 
 # Autoware 消息 (可选)
 find_package(autoware_auto_vehicle_msgs QUIET)
@@ -24,21 +32,37 @@ set(VEHICLE_NODE_SOURCES
     src/video_encoder.cpp
     src/command_executor.cpp
     src/webrtc_client.cpp
+    src/platform_adapter.cpp
     src/latency_monitor.cpp
+    src/mqtt_bridge.cpp
 )
+
+# Demo mode: add simulated vehicle instead of requiring real hardware
+if(FSM_DEMO_MODE)
+  list(APPEND VEHICLE_NODE_SOURCES demo/simulated_vehicle.cpp)
+  message(STATUS "fsm_vehicle_node: DEMO MODE — SimulatedVehicle included")
+endif()
 
 # 创建可执行文件
 add_executable(fsm_vehicle_node ${VEHICLE_NODE_SOURCES})
 
 target_include_directories(fsm_vehicle_node PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/demo
     ${OpenCV_INCLUDE_DIRS}
+    ${MOSQUITTO_INCLUDE_DIR}
 )
 
 target_link_libraries(fsm_vehicle_node
     fsm_common
     ${OpenCV_LIBRARIES}
     x264
+    ${Boost_LIBRARIES}
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    Threads::Threads
+    nlohmann_json::nlohmann_json
+    ${MOSQUITTO_LIB}
 )
 
 # ROS2 依赖

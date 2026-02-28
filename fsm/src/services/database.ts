@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -146,7 +147,7 @@ export function useLocalDatabase() {
       return true
     } catch (e) {
       error.value = `数据库初始化失败: ${e}`
-      console.error(e)
+      logger.error(e, 'system')
       return false
     }
   }

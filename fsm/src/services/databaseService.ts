@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Database Visualization Service
  *
@@ -102,14 +103,14 @@ class DatabaseService {
       const request = indexedDB.open(DB_NAME, DB_VERSION)
 
       request.onerror = () => {
-        console.error('[DB] Failed to open database:', request.error)
+        logger.error('[DB] Failed to open database:', request.error, 'system')
         reject(request.error)
       }
 
       request.onsuccess = () => {
         this.db = request.result
         this.initialized = true
-        console.log('[DB] Database initialized successfully')
+        logger.info('[DB] Database initialized successfully', 'system')
         resolve()
       }
 
@@ -156,7 +157,7 @@ class DatabaseService {
           telemetryStore.createIndex('timestamp', 'timestamp', { unique: false })
         }
 
-        console.log('[DB] Database schema created')
+        logger.info('[DB] Database schema created', 'system')
       }
     })
   }
@@ -324,9 +325,9 @@ class DatabaseService {
         }
       }
 
-      console.log('[DB] Data imported successfully')
+      logger.info('[DB] Data imported successfully', 'system')
     } catch (error) {
-      console.error('[DB] Import failed:', error)
+      logger.error('[DB] Import failed:', error, 'system')
       throw error
     }
   }
@@ -349,7 +350,7 @@ class DatabaseService {
       await this.clear(storeName)
     }
 
-    console.log('[DB] All data cleared')
+    logger.info('[DB] All data cleared', 'system')
   }
 
   // ======================== 私有辅助方法 ========================

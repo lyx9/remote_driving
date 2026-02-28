@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -182,7 +183,7 @@ export function extractPointCloudPoints(pc2: PointCloud2, maxPoints: number = 50
   }
 
   if (xOffset < 0 || yOffset < 0 || zOffset < 0) {
-    console.warn('PointCloud2 missing x/y/z fields')
+    logger.warn('PointCloud2 missing x/y/z fields', 'ros')
     return points
   }
 
@@ -337,16 +338,16 @@ export function useRosBagDb3Parser() {
         }
       }
 
-      console.log(`[DB3 Parser] Loaded: ${file.name}`)
-      console.log(`[DB3 Parser] Topics: ${topics.value.length}`)
-      console.log(`[DB3 Parser] Messages: ${totalMessages}`)
-      console.log(`[DB3 Parser] Duration: ${durationSec.toFixed(2)}s`)
+      logger.info(`[DB3 Parser] Loaded: ${file.name}`, 'ros')
+      logger.info(`[DB3 Parser] Topics: ${topics.value.length}`, 'ros')
+      logger.info(`[DB3 Parser] Messages: ${totalMessages}`, 'ros')
+      logger.info(`[DB3 Parser] Duration: ${durationSec.toFixed(2)}s`, 'ros')
 
       isLoading.value = false
       return true
     } catch (e) {
       error.value = `Failed to load db3: ${e}`
-      console.error('[DB3 Parser] Error:', e)
+      logger.error('[DB3 Parser] Error:', e, 'ros')
       isLoading.value = false
       return false
     }
@@ -390,7 +391,7 @@ export function useRosBagDb3Parser() {
         }
       })
     } catch (e) {
-      console.error(`[DB3 Parser] Error getting messages for ${topicName}:`, e)
+      logger.error(`[DB3 Parser] Error getting messages for ${topicName}:`, e, 'ros')
       return []
     }
   }
@@ -428,7 +429,7 @@ export function useRosBagDb3Parser() {
         type: topic.type
       }
     } catch (e) {
-      console.error(`[DB3 Parser] Error getting message for ${topicName}:`, e)
+      logger.error(`[DB3 Parser] Error getting message for ${topicName}:`, e, 'ros')
       return null
     }
   }
@@ -465,9 +466,9 @@ export function useRosBagDb3Parser() {
       })
 
       messageCache.set(topicName, messages)
-      console.log(`[DB3 Parser] Preloaded ${messages.length} messages for ${topicName}`)
+      logger.info(`[DB3 Parser] Preloaded ${messages.length} messages for ${topicName}`, 'ros')
     } catch (e) {
-      console.error(`[DB3 Parser] Error preloading messages for ${topicName}:`, e)
+      logger.error(`[DB3 Parser] Error preloading messages for ${topicName}:`, e, 'ros')
     }
   }
 
@@ -509,7 +510,7 @@ export function useRosBagDb3Parser() {
           return { raw: data }
       }
     } catch (e) {
-      console.error(`[DB3 Parser] Error parsing message of type ${type}:`, e)
+      logger.error(`[DB3 Parser] Error parsing message of type ${type}:`, e, 'ros')
       return { raw: data, error: String(e) }
     }
   }
@@ -546,7 +547,7 @@ export function useRosBagDb3Parser() {
         }
       }).filter((p: { lat: number; lng: number; alt: number; timestamp: number }) => p.lat !== 0 && p.lng !== 0)
     } catch (e) {
-      console.error('[DB3 Parser] Error getting GPS trajectory:', e)
+      logger.error('[DB3 Parser] Error getting GPS trajectory:', e, 'ros')
       return []
     }
   }

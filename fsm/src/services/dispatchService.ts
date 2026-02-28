@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -324,7 +325,7 @@ export function useVehicleDispatchService() {
   function addVehicle(vehicle: Vehicle) {
     vehicles.value.set(vehicle.id, vehicle)
     updateStats()
-    console.log(`[Dispatch] Vehicle added: ${vehicle.id}`)
+    logger.info(`[Dispatch] Vehicle added: ${vehicle.id}`, 'vehicle')
   }
 
   /**
@@ -334,7 +335,7 @@ export function useVehicleDispatchService() {
     vehicles.value.delete(vehicleId)
     requestQueue.value = requestQueue.value.filter(id => id !== vehicleId)
     updateStats()
-    console.log(`[Dispatch] Vehicle removed: ${vehicleId}`)
+    logger.info(`[Dispatch] Vehicle removed: ${vehicleId}`, 'vehicle')
   }
 
   /**
@@ -376,7 +377,7 @@ export function useVehicleDispatchService() {
     }
 
     updateStats()
-    console.log(`[Dispatch] Handover requested for ${vehicleId}, priority: ${priority}`)
+    logger.info(`[Dispatch] Handover requested for ${vehicleId}, priority: ${priority}`, 'vehicle')
 
     // 尝试处理队列
     processQueue()
@@ -394,7 +395,7 @@ export function useVehicleDispatchService() {
     // 分配运营商
     const operator = assignOperator(vehicleId)
     if (!operator) {
-      console.warn(`[Dispatch] No operator available for ${vehicleId}`)
+      logger.warn(`[Dispatch] No operator available for ${vehicleId}`, 'vehicle')
       return false
     }
 
@@ -413,7 +414,7 @@ export function useVehicleDispatchService() {
     stats.value.totalHandovers++
     updateStats()
 
-    console.log(`[Dispatch] Handover successful: ${vehicleId} → ${operator.name}`)
+    logger.info(`[Dispatch] Handover successful: ${vehicleId} → ${operator.name}`, 'vehicle')
 
     return true
   }
@@ -456,7 +457,7 @@ export function useVehicleDispatchService() {
     // 尝试处理队列中的下一个
     processQueue()
 
-    console.log(`[Dispatch] Handover released for ${vehicleId}`)
+    logger.info(`[Dispatch] Handover released for ${vehicleId}`, 'vehicle')
   }
 
   // ======================== 运营商管理 ========================
@@ -466,7 +467,7 @@ export function useVehicleDispatchService() {
    */
   function addOperator(operator: Operator) {
     operators.value.set(operator.id, operator)
-    console.log(`[Dispatch] Operator added: ${operator.name}`)
+    logger.info(`[Dispatch] Operator added: ${operator.name}`, 'vehicle')
   }
 
   /**
@@ -480,7 +481,7 @@ export function useVehicleDispatchService() {
         releaseHandover(vehicleId)
       }
       operators.value.delete(operatorId)
-      console.log(`[Dispatch] Operator removed: ${operator.name}`)
+      logger.info(`[Dispatch] Operator removed: ${operator.name}`, 'vehicle')
     }
   }
 
@@ -553,7 +554,7 @@ export function useVehicleDispatchService() {
       addVehicle(vehicle)
     }
 
-    console.log(`[Dispatch] Generated ${count} mock vehicles`)
+    logger.info(`[Dispatch] Generated ${count} mock vehicles`, 'vehicle')
   }
 
   /**
@@ -581,7 +582,7 @@ export function useVehicleDispatchService() {
       addOperator(operator)
     }
 
-    console.log(`[Dispatch] Generated ${count} mock operators`)
+    logger.info(`[Dispatch] Generated ${count} mock operators`, 'vehicle')
   }
 
   return {

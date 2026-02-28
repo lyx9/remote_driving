@@ -1,14 +1,31 @@
 #pragma once
 
+// ============================================================================
+// FSM-Pilot  |  CommandExecutor
+// ============================================================================
+// Validates, rate-limits, and publishes vehicle control commands to ROS2.
+//
+// ISO 26262 / MISRA C++ compliance:
+//   [CE-01] Execute() returns [[nodiscard]] bool — caller must check.
+//   [CE-02] All safety-critical bounds violations are reported through the
+//           optional SafetyMonitor* (non-owning pointer, may be nullptr).
+//   [CE-03] Watchdog fires -> TriggerEmergencyStop + SafetyMonitor::ReportFault.
+//   [CE-04] No implicit narrowing conversions in safety-critical checks.
+//   [CE-05] All member variables initialised at point of declaration.
+// ============================================================================
+
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <mutex>
+#include <string>
+
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include "fsm/config_manager.hpp"
 #include "fsm/logger.hpp"
-
-#include <mutex>
-#include <atomic>
-#include <chrono>
+#include "fsm/safety_monitor.hpp"
 
 #ifdef HAVE_AUTOWARE_MSGS
 #include <autoware_auto_control_msgs/msg/ackermann_control_command.hpp>
@@ -21,175 +38,132 @@
 namespace fsm {
 namespace vehicle {
 
-/**
- * @brief 控制指令数据结构
- */
+// ----------------------------------------------------------------------------
+// ControlCommand — physical (SI) units from operator after denormalisation.
+// ----------------------------------------------------------------------------
 struct ControlCommand {
-    // 转向控制
-    float steering_tire_angle = 0.0;      // rad
-    float steering_tire_rotation_rate = 0.0;  // rad/s
-
-    // 纵向控制
-    float speed = 0.0;            // m/s
-    float acceleration = 0.0;     // m/s²
-    float jerk = 0.0;             // m/s³
-
-    // 档位
-    int gear = 3;  // 0:P, 1:R, 2:N, 3:D
-
-    // 信号灯
-    int turn_signal = 0;  // 0:NONE, 1:LEFT, 2:RIGHT
-    bool hazard_lights = false;
-
-    // 紧急停车
-    bool emergency_stop = false;
-
-    // 时间戳和序列号
-    int64_t timestamp_ns = 0;
-    uint64_t sequence_number = 0;
+  float    steering_tire_angle        = 0.0F;  // rad
+  float    steering_tire_rotation_rate = 0.0F; // rad/s
+  float    speed                      = 0.0F;  // m/s
+  float    acceleration               = 0.0F;  // m/s²
+  float    jerk                       = 0.0F;  // m/s³
+  int32_t  gear                       = 3;     // 0:P 1:R 2:N 3:D
+  int32_t  turn_signal                = 0;     // 0:NONE 1:LEFT 2:RIGHT
+  bool     hazard_lights              = false;
+  bool     emergency_stop             = false;
+  int64_t  timestamp_ns               = 0;
+  uint64_t sequence_number            = 0U;
 };
 
-/**
- * @brief 指令执行器
- *
- * 接收远程控制指令并发布到Autoware控制话题
- */
+// ----------------------------------------------------------------------------
+// CommandExecutor
+// ----------------------------------------------------------------------------
 class CommandExecutor {
-public:
-    /**
-     * @brief 构造函数
-     * @param node ROS2节点指针
-     * @param config 车辆配置
-     */
-    CommandExecutor(
-        rclcpp::Node::SharedPtr node,
-        const config::VehicleConfigManager& config);
+ public:
+  // safety_monitor may be nullptr (no fault reporting, watchdog still fires).
+  CommandExecutor(rclcpp::Node::SharedPtr          node,
+                  const config::VehicleConfigManager& config,
+                  SafetyMonitor*                   safety_monitor = nullptr);
+  ~CommandExecutor();
 
-    ~CommandExecutor();
+  CommandExecutor(const CommandExecutor&)            = delete;
+  CommandExecutor& operator=(const CommandExecutor&) = delete;
 
-    /**
-     * @brief 启动指令执行器
-     */
-    void start();
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
-    /**
-     * @brief 停止指令执行器
-     */
-    void stop();
+  void Start();
+  void Stop();
 
-    /**
-     * @brief 执行控制指令
-     * @param cmd 控制指令
-     */
-    void executeCommand(const ControlCommand& cmd);
+  // ── Command execution ─────────────────────────────────────────────────────
 
-    /**
-     * @brief 触发紧急停车
-     * @param reason 紧急停车原因
-     */
-    void triggerEmergencyStop(const std::string& reason = "Remote emergency");
+  // Validate, rate-limit, and publish a control command.
+  // Returns false if the command was rejected (out-of-range, emergency active,
+  // executor not running) — caller MUST check the return value.
+  // [[nodiscard]] — MISRA C++:2023 Rule 0-1-7 (result of function call used).
+  [[nodiscard]] bool Execute(const ControlCommand& cmd);
 
-    /**
-     * @brief 解除紧急停车
-     */
-    void releaseEmergencyStop();
+  // ── Emergency control ─────────────────────────────────────────────────────
 
-    /**
-     * @brief 检查是否处于紧急状态
-     */
-    bool isEmergencyActive() const { return emergency_active_; }
+  // Engage emergency stop: publishes full-brake command and sets E-stop flag.
+  // Thread-safe; idempotent.
+  void TriggerEmergencyStop(const std::string& reason = "Remote emergency");
 
-    /**
-     * @brief 设置控制模式为远程
-     */
-    void setRemoteControlMode();
+  // Release emergency stop (requires explicit operator action).
+  // Returns false if no emergency was active.
+  [[nodiscard]] bool ReleaseEmergencyStop();
 
-    /**
-     * @brief 退出远程控制模式
-     */
-    void exitRemoteControlMode();
+  // ── Remote control mode ───────────────────────────────────────────────────
 
-    /**
-     * @brief 检查是否处于远程控制模式
-     */
-    bool isRemoteControlActive() const { return remote_control_active_; }
+  // Called by VehicleNode when WebRTC connects.
+  void SetRemoteControlMode();
 
-    /**
-     * @brief 获取最后一次指令的时间戳
-     */
-    int64_t getLastCommandTime() const { return last_command_time_; }
+  // Called by VehicleNode when WebRTC disconnects.
+  void ExitRemoteControlMode();
 
-private:
-    /**
-     * @brief 安全检查
-     * @param cmd 待执行的指令
-     * @return 是否通过安全检查
-     */
-    bool safetyCheck(const ControlCommand& cmd);
+  // ── State accessors ───────────────────────────────────────────────────────
 
-    /**
-     * @brief 应用软限制
-     * @param cmd 控制指令 (会被修改)
-     */
-    void applySoftLimits(ControlCommand& cmd);
+  [[nodiscard]] bool    is_emergency_active()       const noexcept;
+  [[nodiscard]] bool    is_remote_control_active()  const noexcept;
+  [[nodiscard]] int64_t last_command_time_ns()      const noexcept;
+  [[nodiscard]] uint64_t missed_commands()          const noexcept;
 
-    /**
-     * @brief 看门狗定时器回调
-     */
-    void watchdogCallback();
+ private:
+  // Returns true if the command is within safe operating limits.
+  // Does NOT modify the command.
+  [[nodiscard]] bool PassesSafetyCheck(const ControlCommand& cmd) const;
 
-    /**
-     * @brief 发布Ackermann控制指令
-     */
-    void publishAckermannCommand(const ControlCommand& cmd);
+  // Clamps the command to safe operating limits (soft limits).
+  // [CE-04] All clamp operations use explicit static_cast.
+  void ApplySoftLimits(ControlCommand& cmd) const;
 
-    /**
-     * @brief 发布档位指令
-     */
-    void publishGearCommand(int gear);
+  // ROS2 timer callback — fires every watchdog_timeout_ms.
+  void WatchdogCallback();
 
-    /**
-     * @brief 发布转向灯指令
-     */
-    void publishTurnSignalCommand(int signal);
+  // Low-level publish helpers.
+  void PublishAckermannCommand(const ControlCommand& cmd);
+  void PublishGearCommand(int32_t gear);
+  void PublishTurnSignalCommand(int32_t signal);
+  void PublishEmergencyCommand(bool emergency);
 
-    /**
-     * @brief 发布紧急停车指令
-     */
-    void publishEmergencyCommand(bool emergency);
+  // ── Dependencies ─────────────────────────────────────────────────────────
+  rclcpp::Node::SharedPtr              node_;
+  const config::VehicleConfigManager&  config_;
+  SafetyMonitor*                       safety_monitor_ = nullptr;  // Non-owning
 
-    rclcpp::Node::SharedPtr node_;
-    const config::VehicleConfigManager& config_;
-
-    // 发布者
+  // ── ROS2 publishers (conditional on Autoware msg availability) ────────────
 #ifdef HAVE_AUTOWARE_MSGS
-    rclcpp::Publisher<autoware_auto_control_msgs::msg::AckermannControlCommand>::SharedPtr ackermann_pub_;
-    rclcpp::Publisher<autoware_auto_vehicle_msgs::msg::GearCommand>::SharedPtr gear_pub_;
-    rclcpp::Publisher<autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand>::SharedPtr turn_signal_pub_;
-    rclcpp::Publisher<autoware_auto_vehicle_msgs::msg::HazardLightsCommand>::SharedPtr hazard_pub_;
-    rclcpp::Publisher<tier4_vehicle_msgs::msg::VehicleEmergencyStamped>::SharedPtr emergency_pub_;
+  rclcpp::Publisher<
+      autoware_auto_control_msgs::msg::AckermannControlCommand>::SharedPtr ackermann_pub_;
+  rclcpp::Publisher<
+      autoware_auto_vehicle_msgs::msg::GearCommand>::SharedPtr gear_pub_;
+  rclcpp::Publisher<
+      autoware_auto_vehicle_msgs::msg::TurnIndicatorsCommand>::SharedPtr turn_signal_pub_;
+  rclcpp::Publisher<
+      autoware_auto_vehicle_msgs::msg::HazardLightsCommand>::SharedPtr hazard_pub_;
+  rclcpp::Publisher<
+      tier4_vehicle_msgs::msg::VehicleEmergencyStamped>::SharedPtr emergency_pub_;
 #else
-    rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr twist_pub_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr emergency_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr twist_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr              emergency_pub_;
 #endif
 
-    // 看门狗定时器
-    rclcpp::TimerBase::SharedPtr watchdog_timer_;
+  rclcpp::TimerBase::SharedPtr watchdog_timer_;
 
-    // 状态
-    mutable std::mutex mutex_;
-    std::atomic<bool> running_{false};
-    std::atomic<bool> emergency_active_{false};
-    std::atomic<bool> remote_control_active_{false};
-    std::atomic<int64_t> last_command_time_{0};
+  // ── Mutable state (thread-safe) ───────────────────────────────────────────
+  mutable std::mutex mu_;
 
-    // 上一次的指令 (用于限制变化率)
-    ControlCommand last_command_;
-    std::chrono::steady_clock::time_point last_command_tp_;
+  std::atomic<bool>     running_{false};
+  std::atomic<bool>     emergency_active_{false};
+  std::atomic<bool>     remote_control_active_{false};
+  std::atomic<int64_t>  last_command_ns_{0};
+  std::atomic<uint64_t> missed_commands_{0U};
 
-    // 序列号跟踪
-    uint64_t expected_sequence_ = 0;
-    uint64_t missed_commands_ = 0;
+  ControlCommand last_command_{};  // Zero-initialised
+  std::chrono::steady_clock::time_point last_command_tp_{};
+  std::chrono::steady_clock::time_point last_publish_tp_{};
+  std::chrono::milliseconds             min_publish_interval_ms_{0};
+
+  uint64_t expected_sequence_ = 0U;
 };
 
 }  // namespace vehicle

@@ -357,3 +357,54 @@ message HeartbeatAck {
     uint64 sequence = 3;
     Timestamp original_stamp = 4;
 }
+
+// ============================================================================
+// 多平台支持
+// ============================================================================
+
+enum PlatformType {
+    PLATFORM_UNKNOWN      = 0;
+    PLATFORM_AUTOWARE     = 1;
+    PLATFORM_GENERIC_ROS2 = 2;
+    PLATFORM_APOLLO       = 3;
+    PLATFORM_CARLA_SIM    = 4;
+    PLATFORM_LGSVL_SIM    = 5;
+    PLATFORM_CUSTOM       = 6;
+}
+
+// Normalized control command (platform-independent).
+// All steering values in [-1.0, 1.0]; throttle/brake in [0.0, 1.0].
+message NormalizedControlCommand {
+    Timestamp    stamp                = 1;
+    string       vehicle_id          = 2;
+    string       operator_id         = 3;
+    float        steering_normalized = 4;   // -1.0 (full left) to +1.0 (full right)
+    float        throttle_normalized = 5;   //  0.0 to 1.0
+    float        brake_normalized    = 6;   //  0.0 to 1.0
+    GearPosition gear                = 7;
+    TurnSignal   turn_signal         = 8;
+    bool         emergency_stop      = 9;
+    uint64       sequence_number     = 10;
+    PlatformType source_platform     = 11;
+}
+
+// Vehicle capability advertisement — sent once at connection time.
+message VehicleCapabilities {
+    string       vehicle_id              = 1;
+    PlatformType platform_type           = 2;
+    bool         has_steer_by_wire       = 3;
+    bool         has_brake_by_wire       = 4;
+    bool         has_throttle_by_wire    = 5;
+    bool         has_gear_control        = 6;
+    bool         has_turn_signal_control = 7;
+    bool         has_emergency_stop      = 8;
+    bool         has_lidar               = 9;
+    bool         has_radar               = 10;
+    bool         has_gps                 = 11;
+    uint32       num_cameras             = 12;
+    float        max_speed_kph           = 13;
+    float        max_steering_angle_deg  = 14;
+    float        wheelbase_m             = 15;
+    string       firmware_version        = 16;
+    repeated string supported_codecs     = 17;  // e.g. ["h264", "vp8"]
+}

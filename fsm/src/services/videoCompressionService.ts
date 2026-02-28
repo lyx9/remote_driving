@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -173,20 +174,20 @@ export function useVideoCompressionService() {
   function enableCompression(compressionMode: CompressionMode = 'light') {
     enabled.value = true
     mode.value = compressionMode
-    console.log(`[Compression] Enabled with mode: ${compressionMode}`)
+    logger.info(`[Compression] Enabled with mode: ${compressionMode}`, 'camera')
   }
 
   // 禁用压缩
   function disableCompression() {
     enabled.value = false
     mode.value = 'none'
-    console.log('[Compression] Disabled')
+    logger.info('[Compression] Disabled', 'camera')
   }
 
   // 切换压缩模式
   function setCompressionMode(compressionMode: CompressionMode) {
     mode.value = compressionMode
-    console.log(`[Compression] Mode changed to: ${compressionMode}`)
+    logger.info(`[Compression] Mode changed to: ${compressionMode}`, 'camera')
   }
 
   // 切换自动调整
@@ -194,9 +195,9 @@ export function useVideoCompressionService() {
     autoAdjust.value = !autoAdjust.value
     if (autoAdjust.value) {
       mode.value = 'auto'
-      console.log('[Compression] Auto-adjust enabled')
+      logger.info('[Compression] Auto-adjust enabled', 'camera')
     } else {
-      console.log('[Compression] Auto-adjust disabled')
+      logger.info('[Compression] Auto-adjust disabled', 'camera')
     }
   }
 
@@ -210,7 +211,7 @@ export function useVideoCompressionService() {
     // 自动调整模式
     if (autoAdjust.value && mode.value === 'auto') {
       const recommended = autoSelectMode(networkQuality.value)
-      console.log(`[Compression] Auto-adjusted to: ${recommended.description}`)
+      logger.info(`[Compression] Auto-adjusted to: ${recommended.description}`, 'camera')
     }
   }
 

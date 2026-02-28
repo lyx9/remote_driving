@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Adaptive Control Mode Service
  *
@@ -144,7 +145,7 @@ class AdaptiveControlModeService {
   }
 
   constructor() {
-    console.log('[Adaptive Control] Service initialized')
+    logger.info('[Adaptive Control] Service initialized', 'vehicle')
   }
 
   /**
@@ -171,7 +172,7 @@ class AdaptiveControlModeService {
     })
 
     this.networkHistory.set(vehicleId, [])
-    console.log(`[Adaptive Control] Vehicle ${vehicleId} initialized in ${initialMode} mode`)
+    logger.info(`[Adaptive Control] Vehicle ${vehicleId} initialized in ${initialMode} mode`, 'vehicle')
   }
 
   /**
@@ -180,7 +181,7 @@ class AdaptiveControlModeService {
   updateNetworkCondition(vehicleId: string, condition: NetworkCondition): ControlMode {
     const state = this.modeStates.get(vehicleId)
     if (!state) {
-      console.warn(`Vehicle ${vehicleId} not initialized`)
+      logger.warn(`Vehicle ${vehicleId} not initialized`, 'vehicle')
       return 'trajectory'  // Default fallback
     }
 
@@ -312,9 +313,9 @@ class AdaptiveControlModeService {
 
     state.transitions.push(transition)
 
-    console.log(`[Adaptive Control] Vehicle ${vehicleId}: ${oldMode} → ${newMode}`)
-    console.log(`  Reason: ${transition.reason}`)
-    console.log(`  Network: ${condition.latency}ms latency, ${condition.bandwidth.toFixed(1)} Mbps, ${condition.packetLoss.toFixed(1)}% loss`)
+    logger.info(`[Adaptive Control] Vehicle ${vehicleId}: ${oldMode} → ${newMode}`, 'vehicle')
+    logger.info(`  Reason: ${transition.reason}`, 'vehicle')
+    logger.info(`  Network: ${condition.latency}ms latency, ${condition.bandwidth.toFixed(1)} Mbps, ${condition.packetLoss.toFixed(1)}% loss`, 'vehicle')
 
     // Notify callbacks
     for (const callback of this.transitionCallbacks) {

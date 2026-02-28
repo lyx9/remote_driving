@@ -34,10 +34,26 @@ export interface Camera {
 }
 
 // 系统日志
+export type LogLevel = 'info' | 'warning' | 'error' | 'success' | 'debug'
+export type LogCategory =
+  | 'system'      // 系统启动/关闭
+  | 'mqtt'        // MQTT 连接/断开/消息
+  | 'webrtc'      // WebRTC 信令/ICE
+  | 'websocket'   // WebSocket 通信
+  | 'control'     // 控制指令发送/接收
+  | 'camera'      // 摄像头状态/帧率
+  | 'telemetry'   // 遥测数据
+  | 'vehicle'     // 车辆状态变化
+  | 'ros'         // ROS2 Topic 状态
+  | 'auth'        // 认证/权限
+
 export interface LogEntry {
+  id: number
   timestamp: Date
   message: string
-  level?: 'info' | 'warning' | 'error'
+  level: LogLevel
+  category: LogCategory
+  detail?: string   // 可选的详细信息 (折叠显示)
 }
 
 // 录制配置

@@ -36,16 +36,49 @@
         <div class="card log-card">
           <div class="card-header">
             <span>📋 SYSTEM LOG</span>
-            <span class="log-count">{{ systemStore.logs.length }} entries</span>
+            <div class="log-header-right">
+              <span class="log-count">{{ systemStore.filteredLogs.length }}/{{ systemStore.logs.length }}</span>
+              <button class="btn-clear" @click="systemStore.clearLogs()" title="Clear logs">✕</button>
+            </div>
           </div>
+
+          <!-- 分类过滤器 -->
+          <div class="log-filters">
+            <button
+              v-for="cat in LOG_CATEGORIES"
+              :key="cat.key"
+              :class="['filter-btn', { active: activeCategory === cat.key }]"
+              :title="cat.label"
+              @click="toggleCategory(cat.key)"
+            >
+              {{ cat.icon }}
+              <span class="filter-count">{{ systemStore.logStats[cat.key] || 0 }}</span>
+            </button>
+          </div>
+
+          <!-- 级别过滤器 -->
+          <div class="level-filters">
+            <button
+              v-for="lvl in LOG_LEVELS"
+              :key="lvl.key"
+              :class="['level-btn', lvl.key, { active: activeLevel === lvl.key }]"
+              @click="toggleLevel(lvl.key)"
+            >{{ lvl.label }}</button>
+            <button class="level-btn reset" @click="resetFilters">ALL</button>
+          </div>
+
           <div class="card-body">
-            <div class="log-box">
+            <div class="log-box" ref="logBoxRef">
               <div
-                v-for="(log, index) in systemStore.logs"
-                :key="index"
+                v-for="log in systemStore.filteredLogs"
+                :key="log.id"
                 :class="['log-entry', log.level]"
+                @click="toggleDetail(log.id)"
               >
-                [{{ formatTime(log.timestamp) }}] {{ log.message }}
+                <span class="log-time">[{{ formatTime(log.timestamp) }}]</span>
+                <span class="log-cat" :class="log.category">{{ catIcon(log.category) }}</span>
+                <span class="log-msg">{{ log.message }}</span>
+                <div v-if="log.detail && expandedId === log.id" class="log-detail">{{ log.detail }}</div>
               </div>
             </div>
           </div>
@@ -59,15 +92,71 @@
 import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import { useSystemStore } from '@/stores/system'
 import { useFleetStore } from '@/stores/fleet'
+import type { LogLevel, LogCategory } from '@/types'
 import AMapLoader from '@amap/amap-jsapi-loader'
 
 const systemStore = useSystemStore()
 const fleetStore = useFleetStore()
 
 const mapContainer = ref<HTMLDivElement>()
+const logBoxRef = ref<HTMLDivElement>()
 let map: any = null
 let markers: Map<string, any> = new Map()
 let polylines: Map<string, any> = new Map()
+
+// ======================== Log 过滤 ========================
+
+const LOG_CATEGORIES = [
+  { key: 'mqtt',      icon: '📡', label: 'MQTT' },
+  { key: 'webrtc',   icon: '🔗', label: 'WebRTC' },
+  { key: 'websocket',icon: '🌐', label: 'WebSocket' },
+  { key: 'control',  icon: '🕹', label: 'Control' },
+  { key: 'camera',   icon: '📷', label: 'Camera' },
+  { key: 'telemetry',icon: '📊', label: 'Telemetry' },
+  { key: 'vehicle',  icon: '🚗', label: 'Vehicle' },
+  { key: 'ros',      icon: '🤖', label: 'ROS' },
+  { key: 'system',   icon: '⚙', label: 'System' },
+  { key: 'auth',     icon: '🔐', label: 'Auth' },
+] as const
+
+const LOG_LEVELS = [
+  { key: 'error',   label: 'ERR' },
+  { key: 'warning', label: 'WRN' },
+  { key: 'success', label: 'OK' },
+  { key: 'info',    label: 'INF' },
+  { key: 'debug',   label: 'DBG' },
+] as const
+
+const activeCategory = ref<LogCategory | null>(null)
+const activeLevel = ref<LogLevel | null>(null)
+const expandedId = ref<number | null>(null)
+
+function toggleCategory(cat: LogCategory) {
+  activeCategory.value = activeCategory.value === cat ? null : cat
+  systemStore.setLogFilter(activeLevel.value, activeCategory.value)
+}
+
+function toggleLevel(lvl: LogLevel) {
+  activeLevel.value = activeLevel.value === lvl ? null : lvl
+  systemStore.setLogFilter(activeLevel.value, activeCategory.value)
+}
+
+function resetFilters() {
+  activeCategory.value = null
+  activeLevel.value = null
+  systemStore.setLogFilter(null, null)
+}
+
+function toggleDetail(id: number) {
+  expandedId.value = expandedId.value === id ? null : id
+}
+
+const CATEGORY_ICONS: Record<string, string> = {
+  mqtt: '📡', webrtc: '🔗', websocket: '🌐', control: '🕹',
+  camera: '📷', telemetry: '📊', vehicle: '🚗', ros: '🤖',
+  system: '⚙', auth: '🔐',
+}
+function catIcon(cat: string) { return CATEGORY_ICONS[cat] || '•' }
 
 // Vehicle counts
 const activeCount = computed(() => fleetStore.vehicles.filter(v => v.status === 'ACTIVE').length)
@@ -384,15 +473,64 @@ onUnmounted(() => {
   padding: 4px 2px;
   line-height: 1.5;
   word-wrap: break-word;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: baseline;
+}
+.log-entry:hover { background: #111; }
+.log-time { color: #444; flex-shrink: 0; }
+.log-cat  { flex-shrink: 0; font-size: 10px; }
+.log-msg  { color: #777; flex: 1; }
+.log-detail {
+  width: 100%; margin-top: 2px; padding: 3px 6px;
+  background: #0d0d0d; border-left: 2px solid #333;
+  color: #555; font-size: 9px; word-break: break-all;
 }
 
-.log-entry.error {
-  color: var(--danger);
-}
+.log-entry.error   .log-msg { color: var(--danger); }
+.log-entry.warning .log-msg { color: var(--warn); }
+.log-entry.success .log-msg { color: #69f0ae; }
+.log-entry.debug   .log-msg { color: #546e7a; }
 
-.log-entry.warning {
-  color: var(--warn);
+/* 分类过滤器 */
+.log-header-right { display: flex; align-items: center; gap: 6px; }
+.btn-clear {
+  background: none; border: none; color: #444; cursor: pointer;
+  font-size: 10px; padding: 0 2px;
 }
+.btn-clear:hover { color: #ef5350; }
+
+.log-filters {
+  display: flex; flex-wrap: wrap; gap: 3px;
+  padding: 4px 8px; border-bottom: 1px solid #1a1a1a;
+}
+.filter-btn {
+  background: #111; border: 1px solid #222; border-radius: 3px;
+  color: #444; cursor: pointer; font-size: 11px; padding: 1px 4px;
+  display: flex; align-items: center; gap: 2px;
+}
+.filter-btn:hover { border-color: #444; color: #888; }
+.filter-btn.active { border-color: #4fc3f7; color: #4fc3f7; background: #0d1a26; }
+.filter-count { font-size: 9px; color: #555; }
+.filter-btn.active .filter-count { color: #4fc3f7; }
+
+.level-filters {
+  display: flex; gap: 3px; padding: 3px 8px;
+  border-bottom: 1px solid #1a1a1a;
+}
+.level-btn {
+  background: #111; border: 1px solid #222; border-radius: 3px;
+  color: #444; cursor: pointer; font-size: 9px; padding: 1px 5px;
+}
+.level-btn:hover { border-color: #444; }
+.level-btn.active.error   { border-color: #ef5350; color: #ef5350; }
+.level-btn.active.warning { border-color: #ffcc02; color: #ffcc02; }
+.level-btn.active.success { border-color: #69f0ae; color: #69f0ae; }
+.level-btn.active.info    { border-color: #4fc3f7; color: #4fc3f7; }
+.level-btn.active.debug   { border-color: #546e7a; color: #546e7a; }
+.level-btn.reset { margin-left: auto; color: #555; }
 
 .slide-left-enter-active,
 .slide-left-leave-active {

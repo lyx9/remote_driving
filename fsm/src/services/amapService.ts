@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Amap (高德地图) Service
  *
@@ -49,7 +50,7 @@ class AmapService {
 
   constructor() {
     this.apiConfig = getAPIConfig()
-    console.log('[Amap Service] Constructor - API Config loaded:', this.apiConfig.amap)
+    logger.info('[Amap Service] Constructor - API Config loaded:', this.apiConfig.amap, 'system')
   }
 
   /**
@@ -57,10 +58,7 @@ class AmapService {
    */
   isAvailable(): boolean {
     const configured = isAPIConfigured('amap')
-    console.log('[Amap Service] isAvailable check:', {
-      configured,
-      apiConfig: this.apiConfig.amap
-    })
+    logger.info(`Amap isAvailable: configured=${configured}`, 'system')
     return configured
   }
 
@@ -69,18 +67,18 @@ class AmapService {
    * Must be called before using map features
    */
   async initialize(): Promise<boolean> {
-    console.log('[Amap Service] Initialize called, initialized:', this.initialized)
+    logger.info('[Amap Service] Initialize called, initialized:', this.initialized, 'system')
 
     if (this.initialized) {
       return true
     }
 
     const available = this.isAvailable()
-    console.log('[Amap Service] isAvailable result:', available)
+    logger.info('[Amap Service] isAvailable result:', available, 'system')
 
     if (!available) {
-      console.warn('[Amap] API not configured')
-      console.warn('[Amap] Config:', this.apiConfig.amap)
+      logger.warn('[Amap] API not configured', 'system')
+      logger.warn('[Amap] Config:', this.apiConfig.amap, 'system')
       return false
     }
 
@@ -88,10 +86,10 @@ class AmapService {
       // Load Amap JavaScript API
       await this.loadAmapScript()
       this.initialized = true
-      console.log('[Amap] Initialized successfully')
+      logger.info('[Amap] Initialized successfully', 'system')
       return true
     } catch (error) {
-      console.error('[Amap] Initialization failed:', error)
+      logger.error('[Amap] Initialization failed:', error, 'system')
       return false
     }
   }
@@ -103,45 +101,42 @@ class AmapService {
     return new Promise((resolve, reject) => {
       // Check if already loaded
       if (window.AMap) {
-        console.log('[Amap] Script already loaded')
+        logger.info('[Amap] Script already loaded', 'system')
         resolve()
         return
       }
 
-      console.log('[Amap] Loading script with config:', {
-        apiKey: this.apiConfig.amap.apiKey,
-        securityJsCode: this.apiConfig.amap.securityJsCode
-      })
+      logger.info(`Amap loading script with apiKey=${this.apiConfig.amap.apiKey.slice(0,6)}...`, 'system')
 
       // Set security verification BEFORE loading script
       if (this.apiConfig.amap.securityJsCode) {
         window._AMapSecurityConfig = {
           securityJsCode: this.apiConfig.amap.securityJsCode
         }
-        console.log('[Amap] Security config set:', window._AMapSecurityConfig)
+        logger.info('[Amap] Security config set:', window._AMapSecurityConfig, 'system')
       }
 
       const scriptUrl = `https://webapi.amap.com/maps?v=2.0&key=${this.apiConfig.amap.apiKey}&plugin=AMap.Geocoder,AMap.Marker,AMap.Polyline`
-      console.log('[Amap] Script URL:', scriptUrl)
+      logger.info('[Amap] Script URL:', scriptUrl, 'system')
 
       const script = document.createElement('script')
       script.type = 'text/javascript'
       script.src = scriptUrl
 
       script.onload = () => {
-        console.log('[Amap] Script loaded successfully')
-        console.log('[Amap] window.AMap available:', !!window.AMap)
+        logger.info('[Amap] Script loaded successfully', 'system')
+        logger.info('[Amap] window.AMap available:', !!window.AMap, 'system')
         resolve()
       }
 
       script.onerror = (error) => {
-        console.error('[Amap] Script load error:', error)
-        console.error('[Amap] Failed URL:', scriptUrl)
+        logger.error('[Amap] Script load error:', error, 'system')
+        logger.error('[Amap] Failed URL:', scriptUrl, 'system')
         reject(new Error('Failed to load Amap script'))
       }
 
       document.head.appendChild(script)
-      console.log('[Amap] Script tag appended to head')
+      logger.info('[Amap] Script tag appended to head', 'system')
     })
   }
 
@@ -150,7 +145,7 @@ class AmapService {
    */
   createMap(container: string | HTMLElement, options?: any): any {
     if (!this.initialized || !window.AMap) {
-      console.error('[Amap] Not initialized')
+      logger.error('[Amap] Not initialized', 'system')
       return null
     }
 
@@ -165,7 +160,7 @@ class AmapService {
     }
 
     this.mapInstance = new window.AMap.Map(container, defaultOptions)
-    console.log('[Amap] Map created')
+    logger.info('[Amap] Map created', 'system')
     return this.mapInstance
   }
 
@@ -174,7 +169,7 @@ class AmapService {
    */
   addMarker(marker: AmapMarker): any {
     if (!this.mapInstance || !window.AMap) {
-      console.error('[Amap] Map not initialized')
+      logger.error('[Amap] Map not initialized', 'system')
       return null
     }
 
@@ -232,7 +227,7 @@ class AmapService {
    */
   addRoute(route: AmapRoute): any {
     if (!this.mapInstance || !window.AMap) {
-      console.error('[Amap] Map not initialized')
+      logger.error('[Amap] Map not initialized', 'system')
       return null
     }
 
@@ -292,7 +287,7 @@ class AmapService {
    */
   async geocode(address: string): Promise<AmapLocation | null> {
     if (!window.AMap) {
-      console.error('[Amap] Not initialized')
+      logger.error('[Amap] Not initialized', 'system')
       return null
     }
 
@@ -310,7 +305,7 @@ class AmapService {
             district: result.geocodes[0].district
           })
         } else {
-          console.error('[Amap] Geocoding failed:', status)
+          logger.error('[Amap] Geocoding failed:', status, 'system')
           resolve(null)
         }
       })
@@ -322,7 +317,7 @@ class AmapService {
    */
   async reverseGeocode(longitude: number, latitude: number): Promise<AmapLocation | null> {
     if (!window.AMap) {
-      console.error('[Amap] Not initialized')
+      logger.error('[Amap] Not initialized', 'system')
       return null
     }
 
@@ -340,7 +335,7 @@ class AmapService {
             district: result.regeocode.addressComponent.district
           })
         } else {
-          console.error('[Amap] Reverse geocoding failed:', status)
+          logger.error('[Amap] Reverse geocoding failed:', status, 'system')
           resolve(null)
         }
       })

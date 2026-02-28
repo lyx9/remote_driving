@@ -1,3 +1,4 @@
+import logger from '@/utils/logger'
 /**
  * FSM-Pilot V2.0 - Remote Driving System
  *
@@ -294,7 +295,7 @@ export function extractPointCloudPoints(pc2: PointCloud2, maxPoints: number = 50
   }
 
   if (xOffset < 0 || yOffset < 0 || zOffset < 0) {
-    console.warn('[PointCloud] Missing x/y/z fields')
+    logger.warn('[PointCloud] Missing x/y/z fields', 'ros')
     return points
   }
 
@@ -305,7 +306,7 @@ export function extractPointCloudPoints(pc2: PointCloud2, maxPoints: number = 50
 
   // 验证数据边界
   if (data.byteLength < point_step) {
-    console.warn('[PointCloud] Data buffer too small')
+    logger.warn('[PointCloud] Data buffer too small', 'ros')
     return points
   }
 
@@ -415,14 +416,14 @@ export function convertImageToDataUrl(image: RosImage | CompressedImage): string
         break
 
       default:
-        console.warn(`[Image] Unsupported encoding: ${encoding}`)
+        logger.warn(`[Image] Unsupported encoding: ${encoding}`, 'ros')
         return null
     }
 
     ctx.putImageData(imageData, 0, 0)
     return canvas.toDataURL('image/jpeg', 0.85)
   } catch (e) {
-    console.error('[Image] Conversion failed:', e)
+    logger.error('[Image] Conversion failed:', e, 'ros')
     return null
   }
 }
@@ -444,11 +445,11 @@ async function initSqlJsWithFallback(): Promise<SqlJsStatic> {
       sqlJsInstance = await initSqlJs({
         locateFile: (file: string) => `${baseUrl}${file}`
       })
-      console.log(`[SQL.js] Initialized from ${baseUrl}`)
+      logger.info(`[SQL.js] Initialized from ${baseUrl}`, 'ros')
       return sqlJsInstance
     } catch (e) {
       lastError = e as Error
-      console.warn(`[SQL.js] Failed to load from ${baseUrl}:`, e)
+      logger.warn(`[SQL.js] Failed to load from ${baseUrl}:`, e, 'ros')
     }
   }
 
@@ -510,7 +511,7 @@ export function useRosBagDb3ParserOptimized() {
           const freedBytes = messages.reduce((sum, m) => sum + estimateMessageSize(m), 0)
           currentCacheSizeBytes -= freedBytes
           messageCache.delete(firstKey)
-          console.log(`[Cache] Evicted ${firstKey}, freed ${(freedBytes / 1024 / 1024).toFixed(2)}MB`)
+          logger.info(`[Cache] Evicted ${firstKey}, freed ${(freedBytes / 1024 / 1024).toFixed(2)}MB`, 'ros')
         }
       }
     }
@@ -658,7 +659,7 @@ export function useRosBagDb3ParserOptimized() {
       }
 
       updateProgress('complete', 100, 'Load complete')
-      console.log(`[DB3 Parser] Loaded: ${file.name} (${totalMessages} messages, ${durationSec.toFixed(2)}s)`)
+      logger.info(`[DB3 Parser] Loaded: ${file.name} (${totalMessages} messages, ${durationSec.toFixed(2)}s)`, 'ros')
 
       isLoading.value = false
       return true
@@ -667,7 +668,7 @@ export function useRosBagDb3ParserOptimized() {
       error.value = errorMsg
       stats.value.lastError = errorMsg
       updateProgress('error', 0, errorMsg)
-      console.error('[DB3 Parser] Error:', e)
+      logger.error('[DB3 Parser] Error:', e, 'ros')
       isLoading.value = false
       return false
     }
@@ -685,12 +686,12 @@ export function useRosBagDb3ParserOptimized() {
 
     // 参数验证
     if (!isValidTimestamp(startTime) || !isValidTimestamp(endTime)) {
-      console.error('[DB3 Parser] Invalid timestamp range')
+      logger.error('[DB3 Parser] Invalid timestamp range', 'ros')
       return []
     }
 
     if (startTime > endTime) {
-      console.error('[DB3 Parser] startTime must be <= endTime')
+      logger.error('[DB3 Parser] startTime must be <= endTime', 'ros')
       return []
     }
 
@@ -730,7 +731,7 @@ export function useRosBagDb3ParserOptimized() {
     } catch (e) {
       stats.value.parseErrors++
       stats.value.lastError = String(e)
-      console.error(`[DB3 Parser] Error getting messages for ${topicName}:`, e)
+      logger.error(`[DB3 Parser] Error getting messages for ${topicName}:`, e, 'ros')
       return []
     }
   }
@@ -773,7 +774,7 @@ export function useRosBagDb3ParserOptimized() {
       return null
     } catch (e) {
       stats.value.parseErrors++
-      console.error(`[DB3 Parser] Error getting message for ${topicName}:`, e)
+      logger.error(`[DB3 Parser] Error getting message for ${topicName}:`, e, 'ros')
       return null
     }
   }
@@ -786,7 +787,7 @@ export function useRosBagDb3ParserOptimized() {
 
     const topic = topics.value.find(t => t.name === topicName)
     if (!topic || !isValidTopicId(topic.id)) {
-      console.warn(`[DB3 Parser] Topic not found: ${topicName}`)
+      logger.warn(`[DB3 Parser] Topic not found: ${topicName}`, 'ros')
       return
     }
 
@@ -830,10 +831,10 @@ export function useRosBagDb3ParserOptimized() {
       stats.value.totalMessagesLoaded += messages.length
       stats.value.cacheSizeMB = currentCacheSizeBytes / 1024 / 1024
 
-      console.log(`[DB3 Parser] Preloaded ${messages.length} messages for ${topicName} (${(batchSize / 1024 / 1024).toFixed(2)}MB)`)
+      logger.info(`[DB3 Parser] Preloaded ${messages.length} messages for ${topicName} (${(batchSize / 1024 / 1024).toFixed(2)}MB)`, 'ros')
     } catch (e) {
       stats.value.parseErrors++
-      console.error(`[DB3 Parser] Error preloading messages for ${topicName}:`, e)
+      logger.error(`[DB3 Parser] Error preloading messages for ${topicName}:`, e, 'ros')
     }
   }
 
@@ -879,7 +880,7 @@ export function useRosBagDb3ParserOptimized() {
       }
     } catch (e) {
       stats.value.parseErrors++
-      console.error(`[DB3 Parser] Error parsing message of type ${type}:`, e)
+      logger.error(`[DB3 Parser] Error parsing message of type ${type}:`, e, 'ros')
       return { raw: data, error: String(e) }
     }
   }
@@ -930,7 +931,7 @@ export function useRosBagDb3ParserOptimized() {
 
       return trajectory
     } catch (e) {
-      console.error('[DB3 Parser] Error getting GPS trajectory:', e)
+      logger.error('[DB3 Parser] Error getting GPS trajectory:', e, 'ros')
       return []
     }
   }

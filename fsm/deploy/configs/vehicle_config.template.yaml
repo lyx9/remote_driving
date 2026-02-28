@@ -1,0 +1,204 @@
+# FSM-Pilot 车端配置模板（生产环境）
+# 部署前修改:
+#   FSM-XX        → 实际车辆 ID（如 FSM-01）
+#   YOUR_DOMAIN   → 云端域名
+#   YOUR_TURN_SECRET → TURN 密钥（通过时间戳 HMAC 动态生成，见 deploy.sh）
+
+vehicle:
+  id: "FSM-01"
+  type: "ROBO-TAXI"
+  name: "远程驾驶车辆01"
+
+  parameters:
+    wheelbase_m: 2.7
+    max_steering_angle_deg: 35
+    max_speed_kph: 60
+    max_acceleration_mps2: 2.0
+    max_deceleration_mps2: 5.0
+    track_width_m: 1.5
+
+sensors:
+  cameras:
+    enabled: true
+    list:
+      - id: "cam_front"
+        topic: "/sensing/camera/traffic_light/image_raw"
+        fps: 30
+        width: 1920
+        height: 1080
+        encoding: "h264"
+        bitrate: 4000000
+        enabled: true
+        qos:
+          reliability: "best_effort"   # cameras are high-freq, loss OK
+          durability:  "volatile"
+          depth: 1                     # only keep latest frame
+
+      - id: "cam_left"
+        topic: "/sensing/camera/front_left/image_raw"
+        fps: 30
+        width: 1280
+        height: 720
+        encoding: "h264"
+        bitrate: 2000000
+        enabled: true
+        qos:
+          reliability: "best_effort"
+          durability:  "volatile"
+          depth: 1
+
+      - id: "cam_right"
+        topic: "/sensing/camera/front_right/image_raw"
+        fps: 30
+        width: 1280
+        height: 720
+        encoding: "h264"
+        bitrate: 2000000
+        enabled: true
+        qos:
+          reliability: "best_effort"
+          durability:  "volatile"
+          depth: 1
+
+      - id: "cam_rear"
+        topic: "/sensing/camera/rear/image_raw"
+        fps: 15
+        width: 1280
+        height: 720
+        encoding: "h264"
+        bitrate: 1500000
+        enabled: true
+        qos:
+          reliability: "best_effort"
+          durability:  "volatile"
+          depth: 1
+
+  topics:
+    velocity_status: "/vehicle/status/velocity_status"
+    steering_status: "/vehicle/status/steering_status"
+    gear_status: "/vehicle/status/gear_status"
+    control_mode: "/vehicle/status/control_mode"
+    turn_indicators: "/vehicle/status/turn_indicators_status"
+    hazard_lights: "/vehicle/status/hazard_lights_status"
+    localization: "/localization/kinematic_state"
+    diagnostics: "/diagnostics_agg"
+
+  # Per-group QoS overrides for sensor subscriptions.
+  # Defaults are best_effort/volatile which is appropriate for real-time data.
+  topics_qos:
+    cameras:
+      reliability: "best_effort"
+      durability:  "volatile"
+      depth: 1
+    vehicle:
+      reliability: "best_effort"
+      durability:  "volatile"
+      depth: 10
+    localization:
+      reliability: "best_effort"
+      durability:  "volatile"
+      depth: 10
+
+webrtc:
+  stun_servers:
+    - "stun:YOUR_DOMAIN:3478"
+
+  turn_servers:
+    - url: "turn:YOUR_DOMAIN:3478"
+      username: "fsm_turn"         # 静态用户名（配合 HMAC secret）
+      credential: "YOUR_TURN_SECRET"
+
+  signaling:
+    url: "wss://YOUR_DOMAIN/ws"
+    reconnect_interval: 5000
+    heartbeat_interval: 1000
+
+  video:
+    codec: "h264"
+    max_bitrate: 8000000
+    adaptive_bitrate: true
+
+control:
+  topics:
+    steering_cmd: "/control/command/steering_cmd"
+    velocity_cmd: "/control/command/velocity_cmd"
+    gear_cmd: "/vehicle/command/gear_cmd"
+    turn_signal_cmd: "/vehicle/command/turn_indicators_cmd"
+    hazard_cmd: "/vehicle/command/hazard_lights_cmd"
+    emergency: "/system/emergency/emergency_cmd"
+
+  # QoS for control publishers — use reliable to avoid dropped commands.
+  topics_qos:
+    steering_cmd:
+      reliability: "reliable"
+      durability:  "volatile"
+      depth: 10
+    gear_cmd:
+      reliability: "reliable"
+      durability:  "volatile"
+      depth: 10
+    turn_signal:
+      reliability: "reliable"
+      durability:  "volatile"
+      depth: 10
+    emergency_cmd:
+      reliability: "reliable"
+      durability:  "volatile"
+      depth: 10
+
+  safety:
+    max_steering_rate_dps: 30
+    max_acceleration_mps2: 2.0
+    max_deceleration_mps2: 5.0
+    emergency_decel_mps2: 9.0
+    watchdog_timeout_ms: 200
+    soft_limits_enabled: true
+    emergency_stop_enabled: true
+    # Maximum rate (Hz) at which control commands are published to ROS2 topics.
+    # Prevents flooding the vehicle CAN bus. 0 = unlimited.
+    command_publish_rate_hz: 50
+
+# ── MQTT transport ───────────────────────────────────────────────────────────
+# Enables a parallel MQTT transport alongside the WebSocket link.
+# Vehicle publishes protobuf telemetry to MQTT and receives control commands.
+#
+# Plain broker (e.g. EMQX on ECS):
+#   broker_url: "tcp://YOUR_DOMAIN:1883"
+#
+# Alibaba Cloud IoT Platform (recommended for production):
+#   enabled: true
+#   aliyun:
+#     mode: true
+#     product_key:   "YOUR_PRODUCT_KEY"
+#     device_name:   "FSM-01"
+#     device_secret: "YOUR_DEVICE_SECRET"
+#     region:        "cn-shanghai"
+#
+mqtt:
+  enabled: false
+  broker_url: "tcp://YOUR_DOMAIN:1883"
+  client_id: ""                             # auto-generated if empty
+  username: ""
+  password: ""
+  use_tls: false
+  ca_cert_path: ""
+  keepalive_s: 60
+  qos: 1
+  retain: false
+  telemetry_topic: "fsm/telemetry/{vehicle_id}"
+  control_topic:   "fsm/control/{vehicle_id}"
+  status_topic:    "fsm/status/{vehicle_id}"
+
+  # Alibaba Cloud IoT Platform credentials (leave empty for plain broker)
+  aliyun:
+    mode: false
+    product_key: ""
+    device_name: ""
+    device_secret: ""
+    region: "cn-shanghai"
+
+logging:
+  level: "info"
+  file: "/tmp/fsm_vehicle.log"
+  max_size_mb: 50
+  max_files: 5

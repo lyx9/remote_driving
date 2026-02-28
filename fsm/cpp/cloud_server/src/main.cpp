@@ -1,218 +1,193 @@
-/**
- * FSM-Pilot 云端服务器
- * 主入口点
- */
-
 #include "fsm/config_manager.hpp"
 #include "fsm/logger.hpp"
+#include "fsm/audit_logger.hpp"
 #include "fsm/cloud/scheduling_service.hpp"
 #include "fsm/cloud/signaling_server.hpp"
 #include "fsm/cloud/alert_analyzer.hpp"
-#include "fsm/cloud/prediction_interface.hpp"
+#include "fsm/cloud/session_manager.hpp"
+#include "fsm/cloud/rest_api_server.hpp"
+#include "fsm/cloud/mqtt_relay.hpp"
 
-#include <iostream>
-#include <csignal>
 #include <atomic>
-#include <thread>
 #include <chrono>
+#include <csignal>
+#include <string>
+#include <thread>
 
-// 全局运行标志
+namespace {
 std::atomic<bool> g_running{true};
 
-// 信号处理
-void signalHandler(int signum) {
-    FSM_LOG_INFO("Received signal " + std::to_string(signum) + ", shutting down...");
-    g_running = false;
+void SignalHandler(int /*signum*/) {
+  g_running = false;
 }
+}  // namespace
 
-// REST API 服务器 (简化实现)
-class RestApiServer {
-public:
-    RestApiServer(int port,
-                  fsm::cloud::SchedulingService& scheduler,
-                  fsm::cloud::AlertAnalyzer& alert_analyzer,
-                  fsm::cloud::PredictionInterface& prediction)
-        : port_(port)
-        , scheduler_(scheduler)
-        , alert_analyzer_(alert_analyzer)
-        , prediction_(prediction)
-    {
-    }
-
-    bool start() {
-        FSM_LOG_INFO("[REST API] Starting on port " + std::to_string(port_));
-        // 实际实现需要使用 HTTP 库如 cpp-httplib
-        // 这里是占位符
-        return true;
-    }
-
-    void stop() {
-        FSM_LOG_INFO("[REST API] Stopped");
-    }
-
-private:
-    int port_;
-    fsm::cloud::SchedulingService& scheduler_;
-    fsm::cloud::AlertAnalyzer& alert_analyzer_;
-    fsm::cloud::PredictionInterface& prediction_;
-};
-
-void printUsage(const char* program) {
-    std::cout << "Usage: " << program << " <config_file>\n"
-              << "\n"
-              << "FSM-Pilot Cloud Server\n"
-              << "远程驾驶平台云端服务\n"
-              << "\n"
-              << "Arguments:\n"
-              << "  config_file    Path to cloud_config.yaml\n"
-              << "\n"
-              << "Example:\n"
-              << "  " << program << " config/cloud_config.yaml\n";
+static void PrintUsage(const char* program) {
+  std::fprintf(stderr, "Usage: %s <config_file>\n"
+               "  config_file  Path to cloud_config.yaml\n", program);
 }
 
 int main(int argc, char* argv[]) {
-    // 参数检查
-    if (argc < 2) {
-        printUsage(argv[0]);
-        return 1;
+  if (argc < 2) {
+    PrintUsage(argv[0]);
+    return 1;
+  }
+
+  fsm::Logger::Init("fsm-cloud", "", fsm::Logger::Level::kInfo);
+  FSM_LOG_INFO("FSM-Pilot Cloud Server starting");
+
+  std::signal(SIGINT,  SignalHandler);
+  std::signal(SIGTERM, SignalHandler);
+
+  fsm::config::CloudConfigManager config;
+  if (!config.LoadFromFile(argv[1])) {
+    FSM_LOG_ERROR("Failed to load config: {}", argv[1]);
+    return 1;
+  }
+
+  // Audit log
+  fsm::AuditLogger::Init("/var/log/fsm/audit.log");
+
+  // Core services
+  fsm::cloud::SchedulingService scheduler(config);
+  scheduler.Start();
+
+  fsm::cloud::AlertAnalyzer alert_analyzer(config);
+  alert_analyzer.set_alert_callback([](const fsm::cloud::Alert& alert) {
+    const char* sev =
+        (alert.severity == fsm::cloud::AlertSeverity::kCritical) ? "CRITICAL" :
+        (alert.severity == fsm::cloud::AlertSeverity::kWarning)  ? "WARNING"  : "INFO";
+    FSM_LOG_WARN("[ALERT] {} - {}: {}", sev, alert.vehicle_id, alert.message);
+    fsm::AuditLogger::LogAlertFired(
+        alert.id, alert.vehicle_id, alert.type, sev);
+  });
+  alert_analyzer.set_resolved_callback([](const fsm::cloud::Alert& alert) {
+    FSM_LOG_INFO("[ALERT RESOLVED] {}: {}", alert.vehicle_id, alert.type);
+  });
+
+  // Session manager
+  const int session_timeout_s = (config.session_timeout_s() > 0)
+      ? config.session_timeout_s() : 300;
+  fsm::cloud::SessionManager session_manager(session_timeout_s);
+  session_manager.set_on_session_created([](const fsm::cloud::Session& s) {
+    fsm::AuditLogger::LogSessionCreated(
+        s.session_id, s.operator_id, s.vehicle_id);
+  });
+  session_manager.set_on_session_terminated([](const fsm::cloud::Session& s) {
+    fsm::AuditLogger::LogSessionTerminated(
+        s.session_id, "operator_request", s.duration_s());
+  });
+  session_manager.set_on_session_expired([](const fsm::cloud::Session& s) {
+    fsm::AuditLogger::LogSessionTerminated(
+        s.session_id, "expired", s.duration_s());
+  });
+
+  // WebSocket signaling server
+  fsm::cloud::SignalingServer signaling(config);
+
+  // REST API server (also holds metrics counters)
+  fsm::cloud::RestApiServer rest_api(config, scheduler, alert_analyzer,
+                                     session_manager);
+
+  // Wire telemetry relay into scheduling + alert pipeline
+  signaling.set_telemetry_callback(
+      [&scheduler, &alert_analyzer, &rest_api](
+          const std::string& vehicle_id,
+          const nlohmann::json& payload) {
+        const auto& d = payload.value("data", nlohmann::json::object());
+
+        fsm::cloud::VehicleSchedulingInfo vi;
+        vi.vehicle_id     = vehicle_id;
+        vi.latency_ms     = d.value("latency_ms",  0.0f);
+        vi.battery_pct    = d.value("battery_pct", 100.0f);
+        vi.speed_mps      = d.value("speed_mps",   0.0f);
+        vi.is_connected   = true;
+        vi.task_status    = "ACTIVE";
+        vi.last_update_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        scheduler.UpdateVehicleState(vi);
+
+        fsm::cloud::VehicleHealthSnapshot snap;
+        snap.latency_ms     = vi.latency_ms;
+        snap.battery_pct    = static_cast<int>(vi.battery_pct);
+        snap.last_update_ns = vi.last_update_ns;
+        alert_analyzer.Analyze(vehicle_id, snap);
+
+        rest_api.RecordTelemetryReceived();
+      });
+
+  // Vehicle connect / disconnect audit events
+  signaling.set_connect_callback([&session_manager](const std::string& vehicle_id) {
+    FSM_LOG_INFO("Vehicle connected: {}", vehicle_id);
+    fsm::AuditLogger::LogVehicleConnected(vehicle_id);
+  });
+  signaling.set_disconnect_callback(
+      [&scheduler, &session_manager](const std::string& vehicle_id) {
+        FSM_LOG_INFO("Vehicle disconnected: {}", vehicle_id);
+        fsm::AuditLogger::LogVehicleDisconnected(vehicle_id, "connection_closed");
+        scheduler.RemoveVehicle(vehicle_id);
+        session_manager.TerminateVehicleSessions(vehicle_id);
+      });
+
+  // Optional MQTT relay
+  std::unique_ptr<fsm::cloud::MqttRelay> mqtt_relay;
+  if (config.cloud_mqtt_config().enabled) {
+    mqtt_relay = std::make_unique<fsm::cloud::MqttRelay>(
+        config.cloud_mqtt_config());
+    if (mqtt_relay->Start()) {
+      FSM_LOG_INFO("MQTT relay started: {}", config.cloud_mqtt_config().broker_url);
+    } else {
+      FSM_LOG_WARN("MQTT relay failed to start — continuing without MQTT");
+      mqtt_relay.reset();
     }
+  }
 
-    std::string config_path = argv[1];
+  if (!signaling.Start()) {
+    FSM_LOG_ERROR("Failed to start signaling server on port {}",
+                  config.signaling_port());
+    return 1;
+  }
 
-    // 初始化日志
-    // Logger::setLevel(fsm::LogLevel::DEBUG);
-    // Logger::setPrefix("[FSM-Cloud]");
+  if (!rest_api.Start()) {
+    FSM_LOG_WARN("REST API failed to start on port {}", config.api_port());
+    // Non-fatal — continue without REST API
+  }
 
-    FSM_LOG_INFO("========================================");
-    FSM_LOG_INFO("  FSM-Pilot Cloud Server v1.1.0");
-    FSM_LOG_INFO("  远程驾驶平台云端服务");
-    FSM_LOG_INFO("========================================");
+  FSM_LOG_INFO("Signaling: ws://0.0.0.0:{}", config.signaling_port());
+  FSM_LOG_INFO("REST API:  http://0.0.0.0:{}/api/v1", config.api_port());
+  FSM_LOG_INFO("Metrics:   http://0.0.0.0:{}/metrics", config.api_port());
+  FSM_LOG_INFO("All services started — press Ctrl+C to stop");
 
-    // 注册信号处理
-    signal(SIGINT, signalHandler);
-    signal(SIGTERM, signalHandler);
-
-    // 加载配置
-    FSM_LOG_INFO("Loading configuration from: " + config_path);
-    fsm::config::CloudConfigManager config;
-    if (!config.loadFromFile(config_path)) {
-        FSM_LOG_ERROR("Failed to load configuration");
-        return 1;
-    }
-    FSM_LOG_INFO("Configuration loaded successfully");
-
-    // 创建服务
-    FSM_LOG_INFO("Initializing services...");
-
-    // 1. 调度服务
-    fsm::cloud::SchedulingService scheduler(config);
-    scheduler.start();
-    FSM_LOG_INFO("Scheduling service started");
-
-    // 2. 告警分析器
-    fsm::cloud::AlertAnalyzer alert_analyzer(config);
-
-    // 设置告警回调
-    alert_analyzer.onAlert([](const fsm::cloud::Alert& alert) {
-        std::string severity_str;
-        switch (alert.severity) {
-            case fsm::cloud::AlertSeverity::INFO: severity_str = "INFO"; break;
-            case fsm::cloud::AlertSeverity::WARNING: severity_str = "WARNING"; break;
-            case fsm::cloud::AlertSeverity::CRITICAL: severity_str = "CRITICAL"; break;
-        }
-        FSM_LOG_WARN("[ALERT] " + severity_str + " - " + alert.vehicle_id +
-                   ": " + alert.message);
-    });
-
-    alert_analyzer.onAlertResolved([](const fsm::cloud::Alert& alert) {
-        FSM_LOG_INFO("[ALERT RESOLVED] " + alert.vehicle_id + ": " + alert.type);
-    });
-
-    FSM_LOG_INFO("Alert analyzer initialized");
-
-    // 3. 预测接口
-    fsm::cloud::PredictionInterface prediction(config);
-    FSM_LOG_INFO("Prediction interface initialized (enabled: " +
-             std::string(prediction.isEnabled() ? "yes" : "no") + ")");
-
-    // 4. 信令服务器
-    fsm::cloud::SignalingServer signaling(config);
-    if (!signaling.start()) {
-        FSM_LOG_ERROR("Failed to start signaling server");
-        return 1;
-    }
-    FSM_LOG_INFO("Signaling server started on port 8081");  // TODO: Get from config
-
-    // 5. REST API 服务器
-    RestApiServer api_server(8080,  // TODO: config.getServerConfig().api_port
-                             scheduler, alert_analyzer, prediction);
-    if (!api_server.start()) {
-        FSM_LOG_ERROR("Failed to start REST API server");
-        return 1;
-    }
-    FSM_LOG_INFO("REST API server started on port 8080");  // TODO: Get from config
-
-    FSM_LOG_INFO("========================================");
-    FSM_LOG_INFO("  All services started successfully");
-    FSM_LOG_INFO("  Press Ctrl+C to shutdown");
-    FSM_LOG_INFO("========================================");
-
-    // 状态监控线程
-    std::thread monitor_thread([&]() {
-        while (g_running) {
-            std::this_thread::sleep_for(std::chrono::seconds(30));
-
-            if (!g_running) break;
-
-            // 打印状态摘要
-            auto queue = scheduler.getSchedulingQueue();
-            auto alert_stats = alert_analyzer.getStatistics();
-
-            FSM_LOG_INFO("--- Status Summary ---");
-            FSM_LOG_INFO("Connected vehicles: " + std::to_string(queue.size()));
-            FSM_LOG_INFO("Active alerts: " + std::to_string(alert_stats.total_alerts) +
-                    " (Critical: " + std::to_string(alert_stats.critical_count) +
-                    ", Warning: " + std::to_string(alert_stats.warning_count) + ")");
-
-            // 打印调度队列
-            if (!queue.empty()) {
-                FSM_LOG_DEBUG("Scheduling queue:");
-                for (size_t i = 0; i < std::min(queue.size(), size_t(5)); i++) {
-                    const auto& v = queue[i];
-                    FSM_LOG_DEBUG("  " + std::to_string(i + 1) + ". " + v.vehicle_id +
-                             " (Priority: " + std::to_string(static_cast<int>(v.priority_score)) +
-                             ", Latency: " + std::to_string(static_cast<int>(v.latency_ms)) + "ms)");
-                }
-            }
-        }
-    });
-
-    // 主循环
+  // Status + session expiry monitor thread (30-second heartbeat)
+  std::thread monitor([&]() {
     while (g_running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-        // 处理车辆状态更新和告警分析
-        auto queue = scheduler.getSchedulingQueue();
-        for (const auto& vehicle : queue) {
-            fsm::cloud::VehicleState state;
-            state.latency_ms = vehicle.latency_ms;
-            state.battery_level = static_cast<int>(vehicle.battery_level);
-            state.emergency_active = (vehicle.emergency_level >= 4);
-            state.last_update_time = vehicle.last_update_time;
-
-            // 分析告警
-            alert_analyzer.analyze(vehicle.vehicle_id, state);
-        }
+      std::this_thread::sleep_for(std::chrono::seconds(30));
+      if (!g_running) break;
+      session_manager.ExpireStale();
+      const auto queue = scheduler.GetSchedulingQueue();
+      const auto stats = alert_analyzer.GetStatistics();
+      FSM_LOG_INFO("Status: vehicles={} sessions={} alerts={} (crit={} warn={})",
+                   queue.size(), session_manager.active_session_count(),
+                   stats.total, stats.critical, stats.warning);
+      for (size_t i = 0; i < std::min(queue.size(), size_t{5}); ++i) {
+        const auto& v = queue[i];
+        FSM_LOG_DEBUG("  {}. {} priority={:.1f} latency={:.0f}ms",
+                      i + 1, v.vehicle_id, v.priority_score, v.latency_ms);
+      }
     }
+  });
 
-    // 关闭
-    FSM_LOG_INFO("Shutting down services...");
+  while (g_running) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
 
-    monitor_thread.join();
-    api_server.stop();
-    signaling.stop();
-    scheduler.stop();
-
-    FSM_LOG_INFO("Cloud server shutdown complete");
-    return 0;
+  FSM_LOG_INFO("Shutting down...");
+  monitor.join();
+  rest_api.Stop();
+  signaling.Stop();
+  if (mqtt_relay) mqtt_relay->Stop();
+  scheduler.Stop();
+  fsm::AuditLogger::Shutdown();
+  fsm::Logger::Shutdown();
+  return 0;
 }
