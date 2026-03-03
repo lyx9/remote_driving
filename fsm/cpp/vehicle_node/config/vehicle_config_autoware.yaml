@@ -1,0 +1,104 @@
+# =============================================================================
+# FSM-Pilot  |  Autoware.universe 集成配置
+# =============================================================================
+# 适用场景：车辆已运行 Autoware.universe，FSM 作为远程驾驶接管模块叠加部署。
+#
+# 核心原则：
+#   - 遥测（状态读取） → 订阅 Autoware 标准 /vehicle/status/* 话题（只读，不干扰）
+#   - 控制指令发布   → 发送至 Autoware External Command Interface
+#   - 操作模式切换   → 连接时调用 /system/operation_mode/change_operation_mode
+# =============================================================================
+
+vehicle:
+  id: "FSM-CAR-AW-01"        # 车辆唯一 ID（可改）
+  type: "robotaxi"
+
+vehicle_params:
+  wheelbase_m: 2.79
+  track_width_m: 1.64
+  max_speed_kph: 40.0                # FSM 层软限制（≤ Autoware 自身限速）
+  max_steering_angle_deg: 35.0
+  max_acceleration_mps2: 2.0
+  max_deceleration_mps2: 5.0
+  emergency_decel_mps2: 8.0
+  max_steering_rate_dps: 60.0
+
+# =============================================================================
+# 控制指令 topic（写入 Autoware External Command Interface）
+# =============================================================================
+# Autoware vehicle_cmd_gate 从以下 external topic 读取外部控制指令，
+# 当 operation_mode = REMOTE 时生效。
+control:
+  topics:
+    # AckermannControlCommand（speed + steering + accel）
+    steering_cmd: "/external/selected/control_cmd"
+    # GearCommand
+    gear_cmd: "/external/selected/gear_cmd"
+    # TurnIndicatorsCommand
+    turn_signal_cmd: "/external/selected/turn_indicators_cmd"
+    # VehicleEmergencyStamped
+    emergency_cmd: "/system/emergency/control_cmd"
+
+  qos:
+    steering_cmd: {reliability: "reliable", durability: "volatile", depth: 10}
+    gear_cmd:     {reliability: "reliable", durability: "volatile", depth: 10}
+    turn_signal:  {reliability: "reliable", durability: "volatile", depth: 10}
+    emergency_cmd:{reliability: "reliable", durability: "volatile", depth: 10}
+
+  publish_rate_hz: 20    # 匹配 Autoware 默认控制频率
+
+# =============================================================================
+# 传感器状态 topic（从 Autoware 读取遥测）
+# =============================================================================
+sensors:
+  topics:
+    # autoware_auto_vehicle_msgs/VelocityReport
+    velocity_status: "/vehicle/status/velocity_status"
+    # autoware_auto_vehicle_msgs/SteeringReport
+    steering_status: "/vehicle/status/steering_status"
+    # autoware_auto_vehicle_msgs/GearReport
+    gear_status: "/vehicle/status/gear_status"
+    # autoware_auto_vehicle_msgs/ControlModeReport
+    control_mode: "/vehicle/status/control_mode"
+    # autoware_auto_vehicle_msgs/TurnIndicatorsReport
+    turn_indicators: "/vehicle/status/turn_indicators_status"
+    # 定位（nav_msgs/Odometry）
+    localization: "/localization/kinematic_state"
+
+  cameras:
+    - id: "front_center"
+      topic: "/sensing/camera/traffic_light/image_raw"
+      fps: 15
+      bitrate_kbps: 2000
+      encoder: software_x264    # 或 nvenc（有 GPU 时）
+
+    # 如需多路摄像头，取消注释：
+    # - id: "front_left"
+    #   topic: "/sensing/camera/front_left/image_raw"
+    #   fps: 15
+    #   bitrate_kbps: 1500
+
+# =============================================================================
+# WebRTC 信令
+# =============================================================================
+webrtc:
+  signaling_url: "wss://YOUR_SERVER/ws"   # ← 替换为实际云端地址
+  stun_servers: ["stun:YOUR_SERVER:3478"]
+  turn_servers: ["turn:YOUR_SERVER:3478"]
+  reconnect_interval_ms: 5000
+
+# =============================================================================
+# 安全监控（ISO 26262 ASIL-B）
+# =============================================================================
+safety:
+  watchdog_timeout_ms: 500       # 超时 → 紧急停车
+  command_publish_rate_hz: 20
+  soft_limits_enabled: true
+  min_battery_pct: 10.0
+
+# =============================================================================
+# 日志
+# =============================================================================
+logging:
+  level: info
+  file: /tmp/fsm_vehicle.log
